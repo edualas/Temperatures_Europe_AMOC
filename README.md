@@ -10,4 +10,4 @@ The code is written in Python. The notebooks (`.ipynb`) and scripts (`.py`) here
 - `produce_all_paper_figures.py`: generates all paper figures in one go.
 - `additional_supplementary_plots.ipynb`: produces supplementary figures with data not covered by the standalone .py scripts.
 
-Please note that the scripts originally work with paths and environments on Levante, DKRZ's supercomputer, and therefore those need to be adjusted to work with the user's environments and paths for the relevant files. Files can either be obtained from the accompanying Zenodo datasete (doi: ), or from ESGF nodes.
+Please note that the scripts originally work with paths and environments on Levante, DKRZ's supercomputer, and therefore those need to be adjusted to work with the user's environments and paths for the relevant files. Files can either be obtained from the accompanying Zenodo dataset (https://doi.org/10.5281/zenodo.18928931), or from ESGF (https://esgf-metagrid.cloud.dkrz.de/search).
