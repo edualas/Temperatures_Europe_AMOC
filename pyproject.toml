@@ -1,0 +1,7 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with -m 'not slow')",
+    "requires_data: marks tests that load cached pickles/netCDFs from data/",
+]
+addopts = "-m 'not slow' -ra"

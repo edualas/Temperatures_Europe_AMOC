@@ -1,0 +1,42 @@
+# Conda environment for teu_amoc. Reproduce with:
+#   conda env create -f environment.yml
+#   conda activate teu
+# Then run the pipeline (no install needed — the scripts/functions.py shim puts
+# src/ and the scripts/ subfolders on sys.path):
+#   python scripts/produce_all_paper_figures.py
+#
+# Captured from the working `teu` env via `conda env export --from-history`
+# (explicit, cross-platform). Directly imported by the .py pipeline: cartopy,
+# shapely, regionmask, statsmodels, xarray, numpy, pandas, matplotlib, scipy
+# (+ netcdf4/cftime/dask at runtime, ipykernel/jupytext for the # %% workflow).
+# The remainder (xesmf, cdo/python-cdo, seaborn, eofs, xclim, cf-xarray,
+# nc-time-axis, tqdm) are not imported by scripts/ or src/ — they support the
+# preprocessing notebooks; trim if you don't run those.
+name: teu
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - xarray
+  - numpy
+  - pandas
+  - matplotlib
+  - scipy
+  - statsmodels
+  - cartopy
+  - shapely
+  - regionmask
+  - netcdf4
+  - cftime
+  - dask
+  - nc-time-axis
+  - cf-xarray
+  - xesmf
+  - seaborn
+  - eofs
+  - xclim
+  - cdo
+  - python-cdo
+  - tqdm
+  - ipykernel
+  - jupytext
