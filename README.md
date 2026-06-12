@@ -2,7 +2,7 @@
 
 Repository with all scripts for the analysis and figures of the submission of the revised manuscript "_How much AMOC weakening would cool Europe in a warming climate?_" (URL/DOI to be provided upon publication)
 
-The code is written in Python. The code is written in Python. Input files can either be obtained from the accompanying Zenodo dataset (link to be made public upon publication) or from ESGF (https://esgf-metagrid.cloud.dkrz.de/search). Please note that the scripts originally work with paths and environments on Levante, DKRZ's supercomputer; data paths need to be adjusted to the user's environment.
+The code is written in Python. Input files can either be obtained from the accompanying Zenodo dataset (link to be made public upon publication) or from ESGF (https://esgf-metagrid.cloud.dkrz.de/search). Please note that the scripts originally work with paths and environments on Levante, DKRZ's supercomputer; data paths need to be adjusted to the user's environment.
 
 ## Setup
 
