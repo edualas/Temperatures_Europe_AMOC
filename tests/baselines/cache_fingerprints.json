@@ -1,0 +1,202 @@
+{
+  "hosmip_masks.pkl": {
+    "checksum": 0.0,
+    "len": 8,
+    "size_bytes": 26783946,
+    "top_level_keys": [
+      "CESM2",
+      "CanESM5",
+      "EC-Earth3",
+      "HadGEM3-GC3-1LL",
+      "HadGEM3-GC3-1MM",
+      "IPSL-CM6A-LR",
+      "MPI-ESM1-2-HR",
+      "MPI-ESM1-2-LR"
+    ],
+    "type": "dict"
+  },
+  "hosmip_reg_ds_dict.pkl": {
+    "checksum": 36259083.9499,
+    "len": 8,
+    "size_bytes": 14886537,
+    "top_level_keys": [
+      "CESM2",
+      "CanESM5",
+      "EC-Earth3",
+      "HadGEM3-GC3-1LL",
+      "HadGEM3-GC3-1MM",
+      "IPSL-CM6A-LR",
+      "MPI-ESM1-2-HR",
+      "MPI-ESM1-2-LR"
+    ],
+    "type": "dict"
+  },
+  "multi_model_dict.pkl": {
+    "checksum": 117943276.9766,
+    "len": 10,
+    "size_bytes": 281913819,
+    "top_level_keys": [
+      "CCSM4",
+      "CESM1",
+      "CESM2",
+      "CanESM5",
+      "EC-Earth3",
+      "HadGEM3-GC3-1LL",
+      "HadGEM3-GC3-1MM",
+      "IPSL-CM6A-LR",
+      "MPI-ESM1-2-HR",
+      "MPI-ESM1-2-LR"
+    ],
+    "type": "dict"
+  },
+  "reg_ds_cesm.nc": {
+    "checksum": 1476156.618817,
+    "shape": {
+      "AMOC_future": [
+        "scenar"
+      ],
+      "AMOC_pi": [],
+      "T_future": [
+        "lat",
+        "lon",
+        "scenar"
+      ],
+      "T_pd_245": [
+        "lat",
+        "lon"
+      ],
+      "T_pi": [
+        "lat",
+        "lon"
+      ],
+      "coef_ensmean": [
+        "lat",
+        "lon"
+      ],
+      "coef_ensmean_intercept": [
+        "lat",
+        "lon"
+      ],
+      "coef_ssp": [
+        "lat",
+        "lon",
+        "scenar"
+      ],
+      "req_strength_pd": [
+        "lat",
+        "lon",
+        "scenar"
+      ],
+      "req_strength_pi": [
+        "lat",
+        "lon",
+        "scenar"
+      ],
+      "req_weakening_pd": [
+        "lat",
+        "lon",
+        "scenar"
+      ],
+      "req_weakening_pi": [
+        "lat",
+        "lon",
+        "scenar"
+      ],
+      "rsq_ensmean": [
+        "lat",
+        "lon"
+      ],
+      "rsq_ensmean_intercept": [
+        "lat",
+        "lon"
+      ],
+      "rsq_ssp": [
+        "lat",
+        "lon",
+        "scenar"
+      ],
+      "ste_ensmean": [
+        "lat",
+        "lon"
+      ],
+      "ste_ensmean_intercept": [
+        "lat",
+        "lon"
+      ],
+      "ste_ssp": [
+        "lat",
+        "lon",
+        "scenar"
+      ]
+    },
+    "size_bytes": 886016
+  },
+  "reg_ds_mpi_tas.nc": {
+    "checksum": 2370637.675049,
+    "shape": {
+      "AMOC_future": [
+        "season",
+        "scenar"
+      ],
+      "AMOC_pi": [
+        "season"
+      ],
+      "T_future": [
+        "season",
+        "scenar",
+        "lat",
+        "lon"
+      ],
+      "T_pd_245": [
+        "season",
+        "lat",
+        "lon"
+      ],
+      "T_pi": [
+        "season",
+        "lat",
+        "lon"
+      ],
+      "coef_ensmean": [
+        "season",
+        "lat",
+        "lon"
+      ],
+      "req_strength_pd": [
+        "season",
+        "scenar",
+        "lat",
+        "lon"
+      ],
+      "req_strength_pi": [
+        "season",
+        "scenar",
+        "lat",
+        "lon"
+      ],
+      "req_weakening_pd": [
+        "season",
+        "scenar",
+        "lat",
+        "lon"
+      ],
+      "req_weakening_pi": [
+        "season",
+        "scenar",
+        "lat",
+        "lon"
+      ],
+      "rsq_ensmean": [
+        "season",
+        "lat",
+        "lon"
+      ],
+      "ste_ensmean": [
+        "season",
+        "lat",
+        "lon"
+      ]
+    },
+    "size_bytes": 541109
+  }
+}
