@@ -14,6 +14,8 @@ import functions
 importlib.reload(functions)
 import cmip_cooling # type: ignore
 importlib.reload(cmip_cooling)
+import FigSupp_synthetic_scaling_factors as ssf  # type: ignore
+importlib.reload(ssf)
 
 ########################################
 # %%
@@ -41,20 +43,34 @@ def _load_decade_caches(decade_labels, masks):
     """Window-keyed regression caches + CMIP6 envelope for each decade.
 
     Returns ``{label: dict(reg_ds_mpi, reg_ds_cesm, reg_ds_giss,
-    hosmip_reg_ds_dict, amoc_extent)}``. The canonical 2091-2100 window
-    reuses the unsuffixed caches; other decades build (or load) their
-    ``_fw{start}-{end}`` siblings on demand.
+    hosmip_reg_ds_dict, amoc_extent, cmip_range_ds)}``. The canonical
+    2091-2100 window reuses the unsuffixed caches; other decades build (or
+    load) their ``_fw{start}-{end}`` siblings on demand. cmip_range_ds is the
+    decade-matched Synthetic CMIP6 range at the Fig3-default spec (pooled/
+    hosing/w); a missing fw range cache degrades to None (NAHosMIP bar) with
+    a warning, since its target side needs a Levante build.
     """
     reg_by_decade = {}
     for lbl in decade_labels:
         fw = LABEL_TO_WINDOW[lbl]
         print(f"Loading regression caches for {lbl} ...")
+        try:
+            cr_ds = ssf.get_cmip_range_ds(recompute=False, state_dep='pooled',
+                                          cal_set='hosing', predictors='w',
+                                          season='', future_window=fw,
+                                          verbose=False)
+            assert cr_ds.attrs['future_window'] == lbl
+        except FileNotFoundError as e:
+            print(f"WARNING: no decade-matched range cache for {lbl} "
+                  f"(falling back to the NAHosMIP bar): {e}")
+            cr_ds = None
         reg_by_decade[lbl] = {
             'reg_ds_mpi': functions.load_regression_ds_mpi(future_window=fw),
             'reg_ds_cesm': functions.get_cesm_reg_ds(recompute=False, future_window=fw),
             'reg_ds_giss': functions.get_giss_reg_ds(recompute=False, masks=masks, future_window=fw),
             'hosmip_reg_ds_dict': functions.get_hosmip_reg_ds(recompute=False, future_window=fw),
             'amoc_extent': functions.get_amoc_extent(fw),
+            'cmip_range_ds': cr_ds,
         }
     return reg_by_decade
 
@@ -92,18 +108,30 @@ def make_figure(reg_by_decade, masks, cmip_cooling_ds, decades=None,
         axes = [axes]
 
     text_color = 'black' if plot_bg != 'black' else 'white'
+    any_range = False
     for i, (ax, D) in enumerate(zip(axes, decades)):
         rd = reg_by_decade[D]
+        cr_ds = rd.get('cmip_range_ds')
+        if cr_ds is not None:
+            # Window-mismatch guard: the range cache carries its target
+            # window; a 2091-2100 cache on a decade panel must refuse.
+            assert cr_ds.attrs.get('future_window') == D, (
+                f"cmip_range_ds has future_window="
+                f"{cr_ds.attrs.get('future_window')!r}, panel decade is {D}")
+            any_range = True
         functions.plot_net_cooling_ranges_mpi_cesm(
             rd['reg_ds_mpi'], rd['reg_ds_cesm'], masks,
             hosmip_reg_ds_dict=rd['hosmip_reg_ds_dict'],
             season='', T_ref='pi', plot_bg=plot_bg, ext_ax=ax, title=False,
             reg_ds_giss=rd['reg_ds_giss'], giss_time_period=giss_time_period,
             cmip_cooling_ds=cmip_cooling_ds, cmip_cooling_decade=D,
-            aggregate_first=aggregate_first, amoc_extent=rd['amoc_extent'])
+            aggregate_first=aggregate_first, amoc_extent=rd['amoc_extent'],
+            cmip_range_ds=cr_ds)
         # Decade label above each panel, clear of the net-cooling-range top
         # chrome (CMIP6 bars + "AMOC projections" reach ~1.06 axes frac).
-        ax.text(0.0, 1.07, f'{chr(97 + i)})  {D}', transform=ax.transAxes,
+        # Single-panel figures carry no letter.
+        label = f'{chr(97 + i)})  {D}' if n > 1 else D
+        ax.text(0.0, 1.07, label, transform=ax.transAxes,
                 fontsize=15, fontweight='bold', color=text_color,
                 ha='left', va='bottom')
 
@@ -113,7 +141,8 @@ def make_figure(reg_by_decade, masks, cmip_cooling_ds, decades=None,
     fig.subplots_adjust(wspace=0.3)
 
     savepath = (f'../plots/FigSupp_cmip_cooling_over_fig3_plotbg-{plot_bg}'
-                f'_decades-{"-".join(decades)}')
+                f'_decades-{"-".join(decades)}'
+                f'_cr-{"med" if any_range else "off"}')
     fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
     fig.savefig(savepath + '.pdf', dpi=400, bbox_inches='tight',

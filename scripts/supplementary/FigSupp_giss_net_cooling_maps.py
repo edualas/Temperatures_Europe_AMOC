@@ -6,7 +6,8 @@ Layout (4 rows × 3 cols):
          regression cache (functions.giss_load_or_compute_gridded), rescaled
          via rescale_giss_coef_for_plotter so plot_regression_coefficients'
          internal AMOC_pi_MPI/10 multiplier yields °C per 10% GISS weakening.
-         Seasonal cells (JJA, DJF) left empty — no DJF/JJA GISS regression yet.
+         Seasonal cells (JJA, DJF) populated the same way since the
+         2026-05-27 (b) GISS seasonal regression wiring.
   row 1: spacer.
   row 2: net cooling points T_ref='pd' (ssp126, ssp245, ssp370).
   row 3: net cooling points T_ref='pi' (ssp126, ssp245, ssp370).
@@ -190,7 +191,7 @@ def make_figure(reg_ds_giss, masks, only_pi=False, plot_bg='white',
 
     season_tag = '' if season == '' else f' [{season.upper()}]'
     row_labels = [
-        ("Scaling factors: local cooling as a function of additional AMOC "
+        ("Cooling sensitivities: local cooling as a function of additional AMOC "
          f"weakening (GISS-E2-1-G, {time_period})"),
         "",
         f"Net-cooling AMOC weakening w.r.t. {'annual mean ' if season == '' else season.upper() + ' '}present-day temperatures ({functions.PD_LABEL}){season_tag}",

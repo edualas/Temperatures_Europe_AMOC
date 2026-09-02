@@ -2,24 +2,31 @@
 
 Scope:
 - HosMIP-7 historical seasonal tas (MPI-ESM1-2-LR excluded; covered by MPI-GE).
+- CNRM-CM6-1, CNRM-ESM2-1, UKESM1-0-LL and MRI-ESM2-0 historical, whose annual
+  ensembles had no seasonal counterpart (HIST_EXTRA_TARGETS).
 - GISS-E2-1-G historical seasonal tas (r1-r11 i1p1f2 — physics/forcing matches
   `_MODEL_PHYSICS_FORCING` in functions.get_cmip_projections).
 - GISS PI seasonal climatology (1850-1899 DJF/JJA mean — sibling of the
   existing yearly tas_pi_climatology.nc).
+- SSP members whose seasonal ensemble lags the annual one (SSP_TARGETS).
 
-Outputs land in /work/bu1431/T_EU_AMOC/CMIP6/historical/{model}/tas_{djf,jja}/
+Outputs land in /work/bu1431/T_EU_AMOC/CMIP6/{scenario}/{model}/tas_{djf,jja}/
 and the GISS processed/ directory. Companion edits to functions.py
-(_model_root + historical season loop) make them visible to the loader.
+(_model_root + the historical and SSP season loops, both of which resolve
+per file across uo1075 and bu1431) make them visible to the loader.
 
-Recipe lifted verbatim from data_process.ipynb cells 214/263 (canonical
-CMIP6 seasonal aggregation). Cell 2 calibrates against an existing
-known-good seasonal file before any new files are written.
+The DJF recipe is data_process.ipynb cells 214/263. The JJA recipe followed
+those cells until 2026-08-21, when `functions.seasonalize` moved to the
+`QS-DEC` anchor: the notebook's January-anchored `QS` put months 7-8-9 in the
+bin labelled JJA. Cell 2 calibrates against known-good seasonal files on
+uo1075 before any new files are written, and is what caught the mismatch.
 
 Run interactively cell-by-cell, or as a standalone script.
 """
 
 # %% imports + config ---------------------------------------------------------
 import os
+import re
 import sys
 import json
 from glob import glob
@@ -28,6 +35,9 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 import cftime
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import functions  # type: ignore
 
 UO1075 = '/work/uo1075/m300817/teu_amoc/data/CMIP6'
 BU1431 = '/work/bu1431/T_EU_AMOC/CMIP6'
@@ -48,6 +58,11 @@ POOL_LOOKUP = {
     'hadgem3-gc31-mm': {'inst': 'MOHC',                 'cmip_name': 'HadGEM3-GC31-MM', 'grid': 'gn'},
     'mpi-esm1-2-hr':   {'inst': 'MPI-M',                'cmip_name': 'MPI-ESM1-2-HR',   'grid': 'gn'},
     'giss-e2-1-g':     {'inst': 'NASA-GISS',            'cmip_name': 'GISS-E2-1-G',     'grid': 'gn'},
+    'mri-esm2-0':      {'inst': 'MRI',                  'cmip_name': 'MRI-ESM2-0',      'grid': 'gn'},
+    'cnrm-cm6-1':      {'inst': 'CNRM-CERFACS',         'cmip_name': 'CNRM-CM6-1',      'grid': 'gr'},
+    'cnrm-esm2-1':     {'inst': 'CNRM-CERFACS',         'cmip_name': 'CNRM-ESM2-1',     'grid': 'gr'},
+    'ukesm1-0-ll':     {'inst': 'MOHC',                 'cmip_name': 'UKESM1-0-LL',     'grid': 'gn'},
+    'access-cm2':      {'inst': 'CSIRO-ARCCSS',         'cmip_name': 'ACCESS-CM2',      'grid': 'gn'},
 }
 
 # 7 HosMIP models for processing (drops MPI-ESM1-2-LR per project memory:
@@ -63,6 +78,17 @@ HOSMIP_DIRS = {
     'MPI-ESM1-2-HR':   'mpi-esm1-2-hr',
 }
 
+# CMIP6 models outside the HosMIP set that have annual historical tas but no
+# seasonal counterpart. Added 2026-08-21 so the seasonal member basis matches
+# the annual one; MRI-ESM2-0 r3 is the member the old uo1075-only member glob
+# could not see (it is staged on bu1431).
+HIST_EXTRA_TARGETS = {
+    'CNRM-CM6-1':  'cnrm-cm6-1',
+    'CNRM-ESM2-1': 'cnrm-esm2-1',
+    'UKESM1-0-LL': 'ukesm1-0-ll',
+    'MRI-ESM2-0':  'mri-esm2-0',
+}
+
 GISS_HIST_DIR = f'{UO1075}/historical/giss-e2-1-g'
 GISS_PROC = f'{BU1431}/giss-e2-1-g/processed'
 
@@ -74,42 +100,11 @@ PI_WINDOW = ('1850', '1899')
 
 
 # %% helpers -------------------------------------------------------------------
-def reset_djf_time(ds):
-    """Shift each DJF time stamp by +1 year (Dec[N] → Jan[N+1] convention).
-
-    Lifted from data_process.ipynb cell 17.
-    """
-    new_time = [
-        cftime.DatetimeProlepticGregorian(d.year + 1, 1, d.day)
-        for d in ds['time'].values
-    ]
-    ds = ds.assign_coords(time=new_time)
-    return ds
-
-
-def seasonalize(monthly, season, start_year):
-    """Monthly → seasonal yearly, calendar-normalised.
-
-    Replicates data_process.ipynb cells 214/263: resample, season-select,
-    drop trailing partial year (DJF only), shift-Dec-to-Jan (DJF only),
-    reassign time axis to a clean proleptic_gregorian year-start range.
-    """
-    if season == 'djf':
-        seas = monthly.resample(time='QS-DEC').mean(dim='time')
-        out = seas.sel(time=seas.time.dt.season == 'DJF').isel(time=slice(None, -1))
-        out = reset_djf_time(out)
-    elif season == 'jja':
-        seas = monthly.resample(time='QS').mean(dim='time')
-        out = seas.sel(time=seas.time.dt.season == 'JJA')
-    else:
-        raise ValueError(f'season must be djf or jja, got {season!r}')
-
-    # 4-digit ISO year (e.g. start_year=1 → '0001'); matches data_process
-    # cell 263 which used start='0001' for piControl, '2015' for SSPs.
-    new_time = xr.cftime_range(
-        start=f'{int(start_year):04d}', periods=out.sizes['time'],
-        freq='YS', calendar='proleptic_gregorian')
-    return out.assign_coords(time=new_time)
+# Both live in the functions library since 2026-08-17 (the Boot et al.
+# seasonal loader is a second caller). Re-exported here so `pst.seasonalize`
+# keeps working for process_giss_seasonal_to2500.py.
+reset_djf_time = functions.reset_djf_time
+seasonalize = functions.seasonalize
 
 
 def _pool_member_dir(model_slug, experiment, member):
@@ -130,6 +125,26 @@ def _pool_member_dir(model_slug, experiment, member):
     if not versions:
         return None
     return f'{base}/{versions[-1]}'
+
+
+def _bu1431_mirror_dir(model_slug, experiment, member):
+    """Return the bu1431 /pool-mirror version dir for (slug, exp, member).
+
+    ``process_mri_full.py`` stages ESGF downloads under
+    ``{BU1431}/{slug}/raw/`` in the /pool directory layout; MRI-ESM2-0 SSP
+    members are absent from /pool and only available there.
+    """
+    info = POOL_LOOKUP.get(model_slug)
+    if info is None:
+        return None
+    base = (f'{BU1431}/{model_slug}/raw/{experiment}/{member}/'
+            f'Amon/tas/{info["grid"]}')
+    if not os.path.isdir(base):
+        return None
+    versions = sorted(
+        d for d in os.listdir(base)
+        if d.startswith('v') and os.path.isdir(f'{base}/{d}'))
+    return f'{base}/{versions[-1]}' if versions else None
 
 
 def _bu1431_upload_files(model_slug, experiment, member):
@@ -153,12 +168,15 @@ def open_monthly_pool(model_slug, experiment, member):
 
     Source preference:
     1. /pool/data/CMIP6 (canonical DKRZ pool)
-    2. /work/bu1431/.../upload/{slug}/ (project upload tree — currently
-       used for EC-Earth3 members not on /pool)
+    2. /work/bu1431/.../{slug}/raw/ (/pool-layout mirror of ESGF downloads
+       — MRI-ESM2-0 SSP members)
+    3. /work/bu1431/.../upload/{slug}/ (project upload tree — EC-Earth3
+       members not on /pool)
 
     Returns lazy xr.Dataset, or None if no source is found.
     """
-    vdir = _pool_member_dir(model_slug, experiment, member)
+    vdir = (_pool_member_dir(model_slug, experiment, member)
+            or _bu1431_mirror_dir(model_slug, experiment, member))
     if vdir is not None:
         files = sorted(glob(f'{vdir}/*.nc'))
     else:
@@ -173,16 +191,12 @@ def open_monthly_pool(model_slug, experiment, member):
 def list_existing_annual_members(model_slug, scenario='historical'):
     """Return list of realisation strings with a *_tas_yr.nc on disk.
 
-    Reads the canonical uo1075 layout used by data_process.ipynb cell 243.
+    Goes through the inventory rather than globbing uo1075 directly, so
+    members staged on bu1431 are seen too — MRI-ESM2-0 historical r3 lives
+    only there and a uo1075-only glob silently omitted it.
     """
-    pattern = f'{UO1075}/{scenario}/{model_slug}/{model_slug}_r*_tas_yr.nc'
-    members = []
-    for path in sorted(glob(pattern)):
-        base = os.path.basename(path)
-        # {model_slug}_{member}_tas_yr.nc
-        rea = base[len(model_slug) + 1:-len('_tas_yr.nc')]
-        members.append(rea)
-    return members
+    return functions.cmip6_inventory.available_realisations(
+        scenario, 'tas', models=[model_slug], esgf_names=False)[model_slug]
 
 
 def write_seasonal(monthly_ds, varname, season, start_year, out_path):
@@ -267,12 +281,13 @@ def _calibrate():
 
 # %% Cell 3 — HosMIP-7 historical seasonal tas --------------------------------
 
-def process_hosmip_historical():
+def process_hosmip_historical(targets=None):
+    targets = HOSMIP_DIRS if targets is None else targets
     print('=' * 70)
-    print('HosMIP-7 HISTORICAL SEASONAL TAS')
+    print('HISTORICAL SEASONAL TAS')
     print('=' * 70)
     summary = []
-    for model_disp, slug in HOSMIP_DIRS.items():
+    for model_disp, slug in targets.items():
         members = list_existing_annual_members(slug, 'historical')
         print(f'\n--- {model_disp} ({slug}): {len(members)} member(s) on disk ---')
         for member in members:
@@ -280,7 +295,13 @@ def process_hosmip_historical():
                        f'{slug}_{member}_tas_djf.nc')
             out_jja = (f'{HIST_OUT_ROOT}/{slug}/tas_jja/'
                        f'{slug}_{member}_tas_jja.nc')
-            if os.path.exists(out_djf) and os.path.exists(out_jja):
+            # a member counts as done only if both seasons exist on *either*
+            # root — the loader resolves per file across both, so a bu1431-only
+            # check would restage members uo1075 already carries
+            if all(any(os.path.exists(f'{root}/historical/{slug}/tas_{s}/'
+                                      f'{slug}_{member}_tas_{s}.nc')
+                       for root in (UO1075, BU1431))
+                   for s in ('djf', 'jja')):
                 print(f'  skip (both present): {member}')
                 summary.append((model_disp, member, 'skip_exists'))
                 continue
@@ -404,13 +425,185 @@ def build_giss_pi_climatology():
     return results
 
 
+# %% Cell 6 — SSP seasonal tas for the members the annual set already has -----
+# The consumed seasonal SSP ensembles are proper subsets of their annual
+# counterparts (get_cmip_projections prints the shortfall and loads the subset).
+# Targets are declared explicitly rather than looped over POOL_LOOKUP, because
+# three documented integrity traps intersect exactly this path — see
+# _ssp_gate below and the project memory note project_cmip6_bad_member_preflight.
+
+SSP_OUT_ROOT = BU1431
+SSP_TARGETS = {           # slug -> scenarios to fill
+    'ec-earth3':  ['ssp245'],
+    'cesm2':      ['ssp126', 'ssp370'],
+    'mri-esm2-0': ['ssp126', 'ssp245'],   # monthly source on bu1431, not /pool
+    'access-cm2': ['ssp126'],
+}
+# GISS ssp245 tas on the DKRZ replicas (/pool, /work/ik1017) is the February
+# 2020 pre-erratum publication for r1-r5, ~0.5 K off at 2100; the canonical
+# source is the NCCS mirror under bu1431. Refuse rather than omit, so a later
+# widening of SSP_TARGETS cannot walk into it.
+SSP_FORBIDDEN = {('giss-e2-1-g', 'ssp245'):
+                 'pre-erratum on DKRZ replicas; use the NCCS mirror '
+                 '(GISS-E2-1-G ssp245 r1-r5 pre-erratum)'}
+# CESM2 ssp370 r5 and r6 carry byte-for-byte identical tas upstream (verified
+# 2026-08-17 on the uo1075 annual caches and on an independent ESGF download:
+# max|r5-r6| = 0 at every timestep, while every other pair differs by 6-8 K).
+# Staging both would double-count one realisation, so neither is staged until
+# the annual ensemble's own duplicate is resolved.
+SSP_FORBIDDEN_MEMBERS = {
+    ('cesm2', 'ssp370', 'r5i1p1f1'): 'duplicate of r6i1p1f1 upstream',
+    ('cesm2', 'ssp370', 'r6i1p1f1'): 'duplicate of r5i1p1f1 upstream',
+}
+SSP_MONTHS = 1032                    # 2015-01..2100-12
+SSP_SPAN = (201501, 210012)
+
+
+def _file_coverage(files):
+    """Months covered by ``files``, from their YYYYMM-YYYYMM suffixes.
+
+    Cheap stand-in for opening them: chunking is model-specific (EC-Earth3
+    publishes one file per year, CESM2 one or two per scenario), so file count
+    is not a usable invariant but the covered span is.
+    """
+    months = set()
+    for f in files:
+        m = re.search(r'_(\d{6})-(\d{6})\.nc$', f)
+        if not m:
+            return None
+        for y in range(int(m.group(1)) // 100, int(m.group(2)) // 100 + 1):
+            lo = int(m.group(1)) % 100 if y == int(m.group(1)) // 100 else 1
+            hi = int(m.group(2)) % 100 if y == int(m.group(2)) // 100 else 12
+            months |= {y * 100 + mm for mm in range(lo, hi + 1)}
+    return months
+
+
+def _ssp_source(slug, scenario, member):
+    """(label, files) for the monthly source open_monthly_pool will use."""
+    vdir = _pool_member_dir(slug, scenario, member)
+    if vdir is not None:
+        return os.path.basename(vdir), sorted(glob(f'{vdir}/*.nc'))
+    mdir = _bu1431_mirror_dir(slug, scenario, member)
+    if mdir is not None:
+        return f'bu1431-raw/{os.path.basename(mdir)}', sorted(glob(f'{mdir}/*.nc'))
+    up = _bu1431_upload_files(slug, scenario, member)
+    return ('bu1431-upload', up) if up else (None, [])
+
+
+def _ssp_gate(slug, scenario, member):
+    """Return None if (slug, scenario, member) is safe to stage, else why not."""
+    if (slug, scenario) in SSP_FORBIDDEN:
+        return f'forbidden: {SSP_FORBIDDEN[(slug, scenario)]}'
+    if (slug, scenario, member) in SSP_FORBIDDEN_MEMBERS:
+        return f'forbidden: {SSP_FORBIDDEN_MEMBERS[(slug, scenario, member)]}'
+    cmip_name = POOL_LOOKUP[slug]['cmip_name']
+    if (cmip_name, member) in functions.cmip6_inventory.RETRACTED:
+        return 'retracted realisation (NCAR forcing-data bug)'
+    label, files = _ssp_source(slug, scenario, member)
+    if not files:
+        return 'on neither /pool nor the bu1431 upload tree (needs an ESGF fetch)'
+    # EC-Earth3 publishes 2-3 version dirs per member and _pool_member_dir
+    # takes the newest; ssp245 r23 is the counterexample where the newest holds
+    # a single year. Refuse rather than write a truncated seasonal file.
+    cov = _file_coverage(files)
+    if cov is None:
+        return f'{label}: unparseable filename span'
+    want = {y * 100 + m for y in range(SSP_SPAN[0] // 100, SSP_SPAN[1] // 100 + 1)
+            for m in range(1, 13)}
+    if not want <= cov:
+        miss = sorted(want - cov)
+        return (f'{label} covers {len(cov)} months, missing '
+                f'{len(miss)} incl. {miss[0]}')
+    return None
+
+
+def process_ssp_seasonal(targets=None, dry_run=False):
+    targets = targets or SSP_TARGETS
+    print('=' * 70)
+    print(f'SSP SEASONAL TAS{" (DRY RUN)" if dry_run else ""}')
+    print('=' * 70)
+    summary, provenance = [], []
+    for slug, scenarios in targets.items():
+        for scenario in scenarios:
+            annual = list_existing_annual_members(slug, scenario)
+            out_dir = f'{SSP_OUT_ROOT}/{scenario}/{slug}'
+            # a member counts as done only if both seasons exist on *either*
+            # root — the loader looks in both, so the skip must too, or a
+            # re-run silently rewrites everything it already staged
+            def _done(m):
+                return all(any(os.path.exists(f'{root}/{scenario}/{slug}/tas_{s}/{slug}_{m}_tas_{s}.nc')
+                               for root in (UO1075, SSP_OUT_ROOT))
+                           for s in ('djf', 'jja'))
+            todo = [m for m in annual if not _done(m)]
+            print(f'\n--- {slug} {scenario}: {len(annual)} annual, '
+                  f'{len(annual) - len(todo)} already seasonal, {len(todo)} to fill ---')
+            for member in todo:
+                why = _ssp_gate(slug, scenario, member)
+                if why:
+                    print(f'  SKIP {member}: {why}')
+                    summary.append((slug, scenario, member, f'skip:{why}'))
+                    continue
+                label, src_files = _ssp_source(slug, scenario, member)
+                if dry_run:
+                    # the open is the expensive part (86 files/member); the gate
+                    # above already covered everything a dry run can check
+                    print(f'  OK   {member}: would write from {label}')
+                    summary.append((slug, scenario, member, 'dry_ok'))
+                    continue
+                monthly = open_monthly_pool(slug, scenario, member)
+                if monthly is None:
+                    print(f'  SKIP {member}: open returned None')
+                    summary.append((slug, scenario, member, 'skip:open_none'))
+                    continue
+                # Some members publish a 2101-2300 extension in the same
+                # version dir (ACCESS-CM2 ssp126 r1), which would otherwise
+                # produce a seasonal file on a different axis from its
+                # ensemble siblings. Crop to the SSP window before the check.
+                monthly = monthly.sel(time=slice(str(SSP_SPAN[0] // 100),
+                                                 str(SSP_SPAN[1] // 100)))
+                n_t = monthly.sizes.get('time', 0)
+                if n_t != SSP_MONTHS:
+                    print(f'  SKIP {member}: time.size={n_t} != {SSP_MONTHS}')
+                    summary.append((slug, scenario, member, f'skip:time{n_t}'))
+                    monthly.close()
+                    continue
+                provenance.append({'slug': slug, 'scenario': scenario, 'member': member,
+                                   'version_dir': label,
+                                   'n_files': len(src_files), 'time_size': n_t})
+                try:
+                    for season in ('djf', 'jja'):
+                        out = f'{out_dir}/tas_{season}/{slug}_{member}_tas_{season}.nc'
+                        if not os.path.exists(out):
+                            write_seasonal(monthly, 'tas', season, 2015, out)
+                    print(f'  wrote {member} (from {label})')
+                    summary.append((slug, scenario, member, 'wrote'))
+                except Exception as e:
+                    print(f'  FAIL write {member}: {e}')
+                    summary.append((slug, scenario, member, f'fail_write:{e}'))
+                finally:
+                    monthly.close()
+    if provenance and not dry_run:
+        path = f'{SSP_OUT_ROOT}/ssp_seasonal_provenance.json'
+        old = json.load(open(path)) if os.path.exists(path) else []
+        # keyed on (slug, scenario, member) so a re-run replaces a member's
+        # record instead of appending a second one
+        merged = {(r['slug'], r['scenario'], r['member']): r
+                  for r in old + provenance}
+        json.dump([merged[k] for k in sorted(merged)], open(path, 'w'), indent=1)
+        print(f'\nprovenance -> {path} ({len(provenance)} new, '
+              f'{len(merged)} total records)')
+    return summary
+
+
 # %% main ---------------------------------------------------------------------
 if __name__ == '__main__':
     # Step 1: calibration — halt if the recipe drifts from the notebook.
     _calibrate()
 
-    # Step 2: HosMIP-7 historical.
+    # Step 2: HosMIP-7 historical, then the non-HosMIP models whose annual
+    # historical ensembles had no seasonal counterpart.
     hosmip_summary = process_hosmip_historical()
+    hosmip_summary += process_hosmip_historical(HIST_EXTRA_TARGETS)
 
     # Step 3: GISS historical.
     giss_summary = process_giss_historical()
@@ -418,14 +611,18 @@ if __name__ == '__main__':
     # Step 4: GISS PI seasonal climatology (depends on step 3).
     pi_paths = build_giss_pi_climatology()
 
-    # Step 5: summary.
+    # Step 5: SSP members whose seasonal ensemble lags the annual one.
+    ssp_summary = process_ssp_seasonal()
+
+    # Step 6: summary.
     print('\n' + '=' * 70)
     print('SUMMARY')
     print('=' * 70)
     from collections import Counter
     hc = Counter([s for _, _, s in hosmip_summary])
     gc = Counter([s for _, s in giss_summary])
-    print('HosMIP-7 historical:')
+    sc = Counter([s for _, _, _, s in ssp_summary])
+    print('Historical (HosMIP-7 + extras):')
     for k, v in sorted(hc.items()):
         print(f'  {k}: {v}')
     print('GISS historical:')
@@ -434,3 +631,6 @@ if __name__ == '__main__':
     print('GISS PI climatology:')
     for season, path in pi_paths.items():
         print(f'  {season}: {path}')
+    print('SSP seasonal:')
+    for k, v in sorted(sc.items()):
+        print(f'  {k}: {v}')

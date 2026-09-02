@@ -16,6 +16,8 @@ import functions
 importlib.reload(functions)
 import cmip_cooling  # type: ignore
 importlib.reload(cmip_cooling)
+import FigSupp_synthetic_scaling_factors as ssf  # type: ignore
+importlib.reload(ssf)
 
 ########################################
 # %%
@@ -32,6 +34,20 @@ if __name__ == '__main__':
     }
     hosmip_reg_ds_dict = functions.get_hosmip_reg_ds(recompute=False)
     cmip_cooling_ds = cmip_cooling.make_cmip_cooling_ds(recompute=False)
+    # Per-country Synthetic CMIP6 ranges; cache-only load (build via the
+    # FigSupp script). cmip_range_statedep selects which cache variant loads
+    # ('none' = the PI-calibrated range). A missing cache raises: silently
+    # falling back to None used to render a _cr-off figure under a filename
+    # promising the range.
+    cmip_range_statedep = 'pooled'    # 'none' | 'dummy' | 'pooled' | 'loglin'
+    cmip_range_calset = 'hosing'      # 'hosing' (default)|'full'|'nocesm2'|'consistentssp'
+    cmip_range_predictors = 'w'       # 'w' (default) | 'wt'
+    cmip_range_season = ''            # '' | 'djf' | 'jja'; must match the RUN cell's season
+    cmip_range_ds = ssf.get_cmip_range_ds(recompute=False,
+                                          state_dep=cmip_range_statedep,
+                                          cal_set=cmip_range_calset,
+                                          predictors=cmip_range_predictors,
+                                          season=cmip_range_season)
 
 
 ########################################
@@ -47,7 +63,7 @@ REG_LINE_ROWS = [
 ]
 
 
-def _restyle_regression_line(ax, target_color, *, linestyle='-', zorder=10, lw=3):
+def restyle_regression_line(ax, target_color, *, linestyle='-', zorder=10, lw=3):
     """Find the lw-3 line of target_color drawn by hosmip_regression_plot and
     bump its zorder / set its linestyle. Used to surface the brown 'this study'
     line that otherwise hides behind the violet NAHosMIP line."""
@@ -66,9 +82,16 @@ def _set_marker_clip_to_spines(ax, *, left=-0.02, top=1.05):
     spines (left at axes -0.02, top at axes 1.05) rather than the default
     data-axes box. Markers can now extend into the gap between the data area
     and the displaced spines, so points right at the edges (x=0 or y=0) don't
-    get half-cut. Lines are left alone — only marker collections are touched."""
+    get half-cut. Lines are left alone — only marker collections are touched.
+    Collections drawn with clip_on=False upstream (e.g. the raw HosMIP
+    scatter in hosmip_regression_plot, which deliberately lets its point
+    cloud bleed past the axes) are skipped rather than newly clipped —
+    otherwise points beyond cap_x_range/low_ylim get hard-cut at this box's
+    right/bottom edge instead of fading unclipped past them."""
     clip_box = TransformedBbox(Bbox([[left, 0.0], [1.0, top]]), ax.transAxes)
     for coll in ax.collections:
+        if not coll.get_clip_on():
+            continue
         coll.set_clip_box(clip_box)
         coll.set_clip_on(True)
 
@@ -82,8 +105,22 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
                 reg_ds_giss=None, giss_time_period='2101-2300',
                 giss_panel_data=None, cmip_cooling_ds=None,
                 cmip_cooling_show=False, aggregate_first=True, weakening_unit='pct',
-                future_window=None):
+                future_window=None,
+                cmip_range_ds=None, cmip_range_show=True, cmip_range_mode='medians',
+                cmip_range_statedep='pooled', cmip_range_calset='hosing',
+                cmip_range_predictors='w', nahosmip_overlay=False,
+                vwb_data=True):
+
     plt.style.use('default')
+    # F9 (2026-08-31): the filename tags must describe the dataset actually
+    # drawn — trust nothing the caller says without checking the attrs.
+    if cmip_range_ds is not None and cmip_range_show:
+        for _attr, _want in (('state_dep', cmip_range_statedep),
+                             ('cal_set', cmip_range_calset),
+                             ('predictors', cmip_range_predictors)):
+            assert cmip_range_ds.attrs.get(_attr) == _want, (
+                f"cmip_range_ds has {_attr}={cmip_range_ds.attrs.get(_attr)!r} "
+                f"but the tag kwargs say {_want!r}")
     sv_xmax_e = sv_xmax_ad = None
     if weakening_unit == 'sv':
         pis = [float(ds.AMOC_pi.values) for ds in hosmip_reg_ds_dict.values()]
@@ -131,7 +168,9 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
         quantile_reg=False, no_plots=False, low_ylim=-8, linear_95_reg=True,
         linear_5_reg=False, central_reg=None, central_reg_intercept=False,
         hosmip_ref_pi=True, cap_x_range=100,
-        bm_data=True, liu_data=True, vwb_data=True, boot_data=True, boot_regression=True,
+        # vwb_data: off by default. Annual is fully measured (filled marker);
+        # DJF still estimates its (control, pi) corner and draws hollow + bracket.
+        bm_data=True, liu_data=True, vwb_data=vwb_data, boot_data=True, boot_regression=True,
         giss_data=giss_panel_for_season,
         giss_regression=(giss_panel_for_season is not None),
         giss_intercept=False, giss_time_period=giss_time_period,
@@ -171,9 +210,9 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
 
     # Brown 'this study' line otherwise hides behind the violet NAHosMIP line
     # (similar negative slope). Dash it and bump zorder so it's distinguishable.
-    _restyle_regression_line(ax_left, 'brown',      linestyle='-', zorder=2)
-    _restyle_regression_line(ax_left, 'blueviolet', linestyle=':',  zorder=3)
-    _restyle_regression_line(ax_left, 'dodgerblue', linestyle='-',  zorder=1)
+    restyle_regression_line(ax_left, 'brown',      linestyle='-', zorder=2)
+    restyle_regression_line(ax_left, 'blueviolet', linestyle=':',  zorder=3)
+    restyle_regression_line(ax_left, 'dodgerblue', linestyle='-',  zorder=1)
 
     # Clip all marker PathCollections to a box matching the visible spines:
     # extends 0.02 axes-fraction further LEFT and 0.05 further UP than the
@@ -219,7 +258,9 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
     def _restyle_study_label(l):
         for prefix, new in _study_rewrites:
             if l.startswith(prefix):
-                return new
+                # the rewrite replaces the whole label, so carry over the
+                # '(est.)' the plotter appends for a provisional marker
+                return new + (' (est.)' if l.endswith('(est.)') else '')
         return l
     l_studies = [_restyle_study_label(l) for l in l_studies]
 
@@ -259,6 +300,7 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
 
     # ── Panel b (right): net-cooling ranges ─────────────────────────────────
     cc_ds_for_plot = cmip_cooling_ds if cmip_cooling_show else None
+    cr_ds_for_plot = cmip_range_ds if cmip_range_show else None
     functions.plot_net_cooling_ranges_mpi_cesm(
         reg_ds_mpi, reg_ds_cesm, masks,
         hosmip_reg_ds_dict=hosmip_reg_ds_dict, season=season,
@@ -267,7 +309,9 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
         reg_ds_giss=reg_ds_giss, giss_time_period=giss_time_period,
         cmip_cooling_ds=cc_ds_for_plot, cmip_cooling_decade=None,
         aggregate_first=aggregate_first, amoc_extent=_ext,
-        weakening_unit=weakening_unit, sv_xmax=sv_xmax_e, amoc_extent_y=1.04)
+        weakening_unit=weakening_unit, sv_xmax=sv_xmax_e, amoc_extent_y=1.04,
+        cmip_range_ds=cr_ds_for_plot, cmip_range_mode=cmip_range_mode,
+        nahosmip_overlay=nahosmip_overlay)
 
     # Right panel vertical alignment with the left column (mirrors Fig3.py:170–180)
     pos_left_top = ax_left.get_position()
@@ -347,14 +391,28 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
                                          transform=fig.transFigure, color=border_color, zorder=1000, clip_on=False))
 
     # ── Save ────────────────────────────────────────────────────────────────
+    # Facet tags are short dashboard key-values, decoupled from the kwarg
+    # names, abbreviated 2026-08-31 for the Overleaf 150-char basename limit
+    # (tag table in the METHODS Changelog entry of that date). _hosov-on
+    # appears only when the overlay is drawn (fw_suffix precedent).
     giss_tag  = f'_giss-{giss_time_period}' if reg_ds_giss is not None else '_giss-off'
     cc_tag    = ('_cc-on' if (cmip_cooling_ds is not None and cmip_cooling_show)
                  else '_cc-off')
-    agg_tag   = '_aggfirst-on' if aggregate_first else '_aggfirst-off'
-    wunit_tag = f'_wunit-{weakening_unit}'
+    agg_tag   = '_aggf-on' if aggregate_first else '_aggf-off'
+    wunit_tag = f'_wu-{weakening_unit}'
+    cr_tag    = (f"_cr-{'med' if cmip_range_mode == 'medians' else 'mc'}"
+                 + f"_pred-{cmip_range_predictors}"
+                 + f"_sdep-{ssf._SDEP_TAG.get(cmip_range_statedep, cmip_range_statedep)}"
+                 + f"_cal-{ssf._CAL_TAG.get(cmip_range_calset, cmip_range_calset)}"
+                 if (cmip_range_ds is not None and cmip_range_show) else '_cr-off')
+    hosov_tag = ('_hosov-on' if (nahosmip_overlay and cmip_range_ds is not None
+                                 and cmip_range_show) else '')
+    vwb_tag   = '_vwb-on' if vwb_data else '_vwb-off'
     savepath = (f"../plots/Fig3_simple_plotbg-{plot_bg}_season-{season or 'annual'}"
-                f"_Tref-{T_ref}_markers-{hosmip_markers}{giss_tag}{cc_tag}{agg_tag}"
-                f"{wunit_tag}{functions.fw_suffix(future_window)}")
+                f"_Tref-{T_ref}_mark-{'on' if hosmip_markers else 'off'}"
+                f"{giss_tag}{cc_tag}{agg_tag}"
+                f"{wunit_tag}{cr_tag}{hosov_tag}{vwb_tag}{functions.fw_suffix(future_window)}")
+    functions.check_savepath(savepath)
     fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
     fig.savefig(savepath + '.pdf', dpi=400, bbox_inches='tight',
@@ -369,11 +427,16 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
 if __name__ == '__main__':
     plot_bg = 'white'
     window = 10
-    season = ''
+    season = cmip_range_season
     T_ref = 'pi'
     hosmip_markers = False
     giss_time_period = '2101-2300'
     cmip_cooling_show = False
+    cmip_range_show = True   # True -> Synthetic CMIP6 range in the right panel
+    cmip_range_mode = 'medians'  # 'medians' | 'mc'
+    # cmip_range_statedep/calset/predictors are set in the LOAD DATA cell
+    # (they select the cache).
+    nahosmip_overlay = False  # True -> hatch the NAHosMIP min-max on top (appendix)
     aggregate_first = True
     weakening_unit = 'pct'
     future_window = None
@@ -388,6 +451,13 @@ if __name__ == '__main__':
                                 cmip_cooling_show=cmip_cooling_show,
                                 aggregate_first=aggregate_first,
                                 weakening_unit=weakening_unit,
-                                future_window=future_window)
+                                future_window=future_window,
+                                cmip_range_ds=cmip_range_ds,
+                                cmip_range_show=cmip_range_show,
+                                cmip_range_mode=cmip_range_mode,
+                                cmip_range_statedep=cmip_range_statedep,
+                                cmip_range_calset=cmip_range_calset,
+                                cmip_range_predictors=cmip_range_predictors,
+                                nahosmip_overlay=nahosmip_overlay)
     print(f"Saved {savepath}")
 # %%

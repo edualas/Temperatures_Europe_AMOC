@@ -44,6 +44,9 @@ import functions
 importlib.reload(functions)
 
 PROC_DIR = '/work/bu1431/T_EU_AMOC/CMIP6/giss-e2-1-g/processed'
+if not os.path.isdir(PROC_DIR):  # off-Levante: mirrored to data/giss_processed
+    PROC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            '..', '..', 'data', 'giss_processed')
 
 MEMBERS = [f'r{i}i1p1f2' for i in range(1, 11)]
 COMPOSITE = ['r3i1p1f2', 'r4i1p1f2', 'r10i1p1f2']

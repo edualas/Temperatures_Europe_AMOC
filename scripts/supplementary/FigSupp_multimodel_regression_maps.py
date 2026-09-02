@@ -25,9 +25,10 @@ if __name__ == '__main__':
     # Load HosMIP multi-model data (includes other studies data)
     multi_model_dict, masks = functions.get_full_multi_model_dict()
 
-    # Load MPI-ESM, CESM and HosMIP regression datasets
+    # Load MPI-ESM, CESM, GISS and HosMIP regression datasets
     reg_ds_mpi = functions.load_regression_ds_mpi()
     reg_ds_cesm = functions.get_cesm_reg_ds(recompute=False)
+    reg_ds_giss = functions.get_giss_reg_ds(recompute=False, masks=masks)
     hosmip_reg_ds_dict = functions.get_hosmip_reg_ds(recompute=False)
 
 ########################################
@@ -38,7 +39,8 @@ if __name__ == '__main__':
 # FIG. S14 FOR STANDARD ERRORS (ANNUAL)
 
 def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_dict,
-                season='', plot_ste=False, ste_relative=False, plot_bg='white'):
+                reg_ds_giss=None, season='', plot_ste=False, ste_relative=False,
+                plot_bg='white'):
     plt.style.use('default')
     plt.rcParams.update({'font.size': 12})
     if plot_bg == 'black':
@@ -49,11 +51,26 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
     season_idx = 0 if season == '' else 1 if season == 'djf' else 2
     custom_cmap = functions.get_custom_cmap()
 
-    if season == '' and not plot_ste:
+    # Panel sets beyond the 8 NAHosMIP maps (2026-09-01 remake): annual is a
+    # full 4x4 grid; seasonal panels carry the models with seasonal combined-
+    # forcing coefficients (vwb has annual+DJF only, Liu/Bellomo annual only);
+    # the ste figures show the NAHosMIP maps alone.
+    if plot_ste:
+        add_plots = []
+    elif season == '':
+        add_plots = ['bellomo4x', 'vwb', 'liu', 'combined', 'boot_combined',
+                     'boot_combined_intercept', 'giss', 'giss_2015-2500']
+    elif season == 'djf':
+        add_plots = ['vwb', 'combined', 'boot_combined', 'giss']
+    else:
+        add_plots = ['combined', 'boot_combined', 'giss']
+
+    n_panels = len(functions.hosmip_labels) + len(add_plots)
+    if n_panels > 12:
         nrows, ncols = (4, 4)
         figsize = (16, 11)
-    elif plot_ste:
-        nrows, ncols = (3, 4)  # 8 HosMIP + 4 CESM = 12 subplots
+    elif n_panels > 8:
+        nrows, ncols = (3, 4)
         figsize = (16, 8)
     else:
         nrows, ncols = (2, 4)
@@ -103,78 +120,61 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
         ax.text(0.5, -0.08, f'{letter}) {model}', transform=ax.transAxes, fontsize=13,
                 ha='center', va='top')
 
-    # Prepare data for other studies plots (rows 3 & 4)
-    # Liu et al. (2020): AMOC weakens by 23.6% (from control to hosing under RCP8.5)
-    liu_tas_diff = (multi_model_dict['CCSM4'].tas.sel(type='hosing', scenar='ghg', season='') -
-                    multi_model_dict['CCSM4'].tas.sel(type='control', scenar='ghg', season=''))
-    liu_amoc_weakening = (multi_model_dict['CCSM4'].amoc.sel(type='control', scenar='ghg') -
-                          multi_model_dict['CCSM4'].amoc.sel(type='hosing', scenar='ghg')) / \
-                         multi_model_dict['CCSM4'].amoc.sel(type='control', scenar='pi') * 100
+    # Data for the combined-forcing / other-studies panels; only what
+    # add_plots needs is computed (vwb carries annual+DJF, Liu/Bellomo
+    # annual only, so their selections stay hard annual).
+    coord_data_plots, tas_data_plot = {}, {}
+    if 'liu' in add_plots:
+        # Liu et al. (2020): AMOC weakens by 23.6% (from control to hosing under RCP8.5)
+        liu_tas_diff = (multi_model_dict['CCSM4'].tas.sel(type='hosing', scenar='ghg', season='') -
+                        multi_model_dict['CCSM4'].tas.sel(type='control', scenar='ghg', season=''))
+        liu_amoc_weakening = (multi_model_dict['CCSM4'].amoc.sel(type='control', scenar='ghg', season='') -
+                              multi_model_dict['CCSM4'].amoc.sel(type='hosing', scenar='ghg', season='')) / \
+                             multi_model_dict['CCSM4'].amoc.sel(type='control', scenar='pi', season='') * 100
+        coord_data_plots['liu'] = multi_model_dict['CCSM4']
+        tas_data_plot['liu'] = liu_tas_diff / liu_amoc_weakening.values * 10  # cooling per 10% weakening
 
-    # Bellomo & Mehling: 4xCO2 experiment with EC-Earth3 (AMOC weakens by 46%)
-    bm_tas_4x = multi_model_dict['EC-Earth3'].tas.sel(type='diff', scenar='ghg', season='').isel(time=0)
-    bm_amoc_4x_weakening = multi_model_dict['EC-Earth3'].amoc.sel(type='diff', scenar='ghg', season='').isel(time=0) / \
-                           multi_model_dict['EC-Earth3'].amoc.sel(type='control', scenar='pi', season='').isel(time=0) * 100
+    if 'bellomo4x' in add_plots:
+        # Bellomo & Mehling: 4xCO2 experiment with EC-Earth3 (AMOC weakens by 46%)
+        bm_tas_4x = multi_model_dict['EC-Earth3'].tas.sel(type='diff', scenar='ghg', season='').isel(time=0)
+        bm_amoc_4x_weakening = multi_model_dict['EC-Earth3'].amoc.sel(type='diff', scenar='ghg', season='').isel(time=0) / \
+                               multi_model_dict['EC-Earth3'].amoc.sel(type='control', scenar='pi', season='').isel(time=0) * 100
+        coord_data_plots['bellomo4x'] = multi_model_dict['EC-Earth3']
+        tas_data_plot['bellomo4x'] = -bm_tas_4x / bm_amoc_4x_weakening.values * 10
 
-    # van Westen & Baatsen: AMOC weakens by 71% more in 1500 case than in 600 case
-    vwb_tas_diff = ((multi_model_dict['CESM1'].tas.sel(type='hosing', scenar='ghg', season='') -
-                     multi_model_dict['CESM1'].tas.sel(type='hosing', scenar='pi', season='')) -
-                    (multi_model_dict['CESM1'].tas.sel(type='control', scenar='ghg', season='') -
-                     multi_model_dict['CESM1'].tas.sel(type='control', scenar='pi', season='')))
-    vwb_amoc_diff = ((multi_model_dict['CESM1'].amoc.sel(type='control', scenar='ghg') -
-                      multi_model_dict['CESM1'].amoc.sel(type='control', scenar='pi')) -
-                     (multi_model_dict['CESM1'].amoc.sel(type='hosing', scenar='ghg') -
-                      multi_model_dict['CESM1'].amoc.sel(type='hosing', scenar='pi'))) / \
-                    multi_model_dict['CESM1'].amoc.sel(type='control', scenar='pi') * 100
+    if 'vwb' in add_plots:
+        # van Westen & Baatsen: AMOC weakens by 71% more in 1500 case than in
+        # 600 case. Explicit season sel: CESM1 carries annual and DJF, so an
+        # unselected season dim would broadcast into the (lat, lon) field.
+        vwb_tas_diff = ((multi_model_dict['CESM1'].tas.sel(type='hosing', scenar='ghg', season=season) -
+                         multi_model_dict['CESM1'].tas.sel(type='hosing', scenar='pi', season=season)) -
+                        (multi_model_dict['CESM1'].tas.sel(type='control', scenar='ghg', season=season) -
+                         multi_model_dict['CESM1'].tas.sel(type='control', scenar='pi', season=season)))
+        # AMOC has no seasonal sibling: the weakening side stays annual.
+        vwb_amoc_diff = ((multi_model_dict['CESM1'].amoc.sel(type='control', scenar='ghg', season='') -
+                          multi_model_dict['CESM1'].amoc.sel(type='control', scenar='pi', season='')) -
+                         (multi_model_dict['CESM1'].amoc.sel(type='hosing', scenar='ghg', season='') -
+                          multi_model_dict['CESM1'].amoc.sel(type='hosing', scenar='pi', season=''))) / \
+                        multi_model_dict['CESM1'].amoc.sel(type='control', scenar='pi', season='') * 100
+        coord_data_plots['vwb'] = multi_model_dict['CESM1']
+        tas_data_plot['vwb'] = vwb_tas_diff / vwb_amoc_diff.values * (-10)
 
-    add_plots = [
-        'bellomo4x',
-        'vwb',
-        'liu',
-        'combined',
-        'boot_combined',
-        'boot_combined_intercept',
-        'boot126',
-        'boot585',
-        ]
-
-    if season != '':
-        add_plots = []  # Skip other studies for seasonal plots
-    elif plot_ste:
-        # For standard errors, only show CESM plots (last 4 in the list)
-        add_plots = ['boot_combined', 'boot_combined_intercept', 'boot126', 'boot585']
-
-    # Coordinate data for plotting
-    coord_data_plots = {
-        'liu': multi_model_dict['CCSM4'],
-        'bellomo4x': multi_model_dict['EC-Earth3'],
-        'vwb': multi_model_dict['CESM1'],
-        'combined': reg_ds_mpi,
-        'boot_combined': reg_ds_cesm,
-        'boot_combined_intercept': reg_ds_cesm,
-        'boot126': reg_ds_cesm,
-        'boot585': reg_ds_cesm,
-    }
-
-    # Temperature data normalized to cooling per 10% AMOC weakening
-    tas_data_plot = {
-        'liu': liu_tas_diff / liu_amoc_weakening.values * (10),  # cooling per 10% weakening
-        'bellomo4x': -bm_tas_4x / bm_amoc_4x_weakening.values * 10,  # cooling per 10% weakening
-        'vwb': vwb_tas_diff / vwb_amoc_diff.values * (-10),  # cooling per 10% weakening
-        'combined': reg_ds_mpi.coef_ensmean.sel(season=season) * functions.AMOC_pi_MPI / 10,  # original values are per Sv change
-        'boot_combined': -reg_ds_cesm.coef_ensmean * 10,  # original values are per % weakening
-        'boot_combined_intercept': -reg_ds_cesm.coef_ensmean_intercept * 10,  # original values are per % weakening
-        'boot126': -reg_ds_cesm.coef_ssp.sel(scenar='ssp126') * 10,
-        'boot585': -reg_ds_cesm.coef_ssp.sel(scenar='ssp585') * 10,
-    }
-
-    # Standard error data for CESM plots
-    ste_data_plot = {
-        'boot_combined': reg_ds_cesm.ste_ensmean * 10 if not ste_relative else -reg_ds_cesm.ste_ensmean / reg_ds_cesm.coef_ensmean * 100,
-        'boot_combined_intercept': reg_ds_cesm.ste_ensmean_intercept * 10 if not ste_relative else -reg_ds_cesm.ste_ensmean_intercept / reg_ds_cesm.coef_ensmean_intercept * 100,
-        'boot126': reg_ds_cesm.ste_ssp.sel(scenar='ssp126') * 10 if not ste_relative else -reg_ds_cesm.ste_ssp.sel(scenar='ssp126') / reg_ds_cesm.coef_ssp.sel(scenar='ssp126') * 100,
-        'boot585': reg_ds_cesm.ste_ssp.sel(scenar='ssp585') * 10 if not ste_relative else -reg_ds_cesm.ste_ssp.sel(scenar='ssp585') / reg_ds_cesm.coef_ssp.sel(scenar='ssp585') * 100,
-    }
+    if 'combined' in add_plots:
+        coord_data_plots['combined'] = reg_ds_mpi
+        tas_data_plot['combined'] = reg_ds_mpi.coef_ensmean.sel(season=season) * functions.AMOC_pi_MPI / 10  # original values are per Sv change
+    if 'boot_combined' in add_plots:
+        coord_data_plots['boot_combined'] = reg_ds_cesm
+        tas_data_plot['boot_combined'] = -reg_ds_cesm.coef_ensmean.sel(season=season) * 10  # original values are per % weakening
+    if 'boot_combined_intercept' in add_plots:
+        coord_data_plots['boot_combined_intercept'] = reg_ds_cesm
+        tas_data_plot['boot_combined_intercept'] = -reg_ds_cesm.coef_ensmean_intercept.sel(season=season) * 10
+    for tp in ('2101-2300', '2015-2500'):
+        key = 'giss' if tp == '2101-2300' else f'giss_{tp}'
+        if key in add_plots:
+            coord_data_plots[key] = reg_ds_giss
+            # K per Sv like MPI: cooling per 10% weakening = coef * AMOC_pi/10
+            tas_data_plot[key] = (reg_ds_giss.sel(time_period=tp).coef_ensmean
+                                  .sel(season=season) * functions.AMOC_pi_GISS / 10)
 
     label_plot = {
         'liu': 'Liu et al. (2020)\nRCP8.5 in 2061-2080\nwith CCSM4',
@@ -183,8 +183,8 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
         'combined': 'This study\nall emissions scenarios\nwith MPI-ESM1.2-LR',
         'boot_combined': 'Boot et al. (2024)\nboth emissions scenarios\nwith CESM2',
         'boot_combined_intercept': 'Boot et al. (2024)\nboth emissions scenarios\nwith CESM2 (non-0 intercept)',
-        'boot126': 'Boot et al. (2024)\nSSP1-2.6 with CESM2\n(non-0 intercept)',
-        'boot585': 'Boot et al. (2024)\nSSP5-8.5 with CESM2\n(non-0 intercept)',
+        'giss': 'Romanou et al. (2023)\nSSP2-4.5 in 2101-2300\nwith GISS-E2-1-G',
+        'giss_2015-2500': 'Romanou et al. (2023)\nSSP2-4.5 in 2015-2500\nwith GISS-E2-1-G',
     }
 
     for j, plot in enumerate(add_plots):
@@ -195,15 +195,9 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
         ax.add_feature(cfeature.BORDERS, edgecolor='black' if not plot_bg=='black' else 'white', linewidth=.5)
         ax.add_feature(cfeature.LAND, facecolor='white' if not plot_bg=='black' else '#191919')
         ax.add_feature(cfeature.OCEAN, facecolor='white' if not plot_bg=='black' else '#191919', zorder=2)
-        if plot_ste:
-            plot_data_j = ste_data_plot[plot]
-            plot_cmap_j = ste_cmap
-        else:
-            plot_data_j = tas_data_plot[plot]
-            plot_cmap_j = custom_cmap
         mesh = ax.pcolormesh(coord_data_plots[plot].lon, coord_data_plots[plot].lat,
-                             plot_data_j, transform=ccrs.PlateCarree(),
-                             cmap=plot_cmap_j, norm=norm, shading='auto')
+                             tas_data_plot[plot], transform=ccrs.PlateCarree(),
+                             cmap=custom_cmap, norm=norm, shading='auto')
         ax.set_extent([-18.5, 38.5, 34.8, 72], crs=ccrs.PlateCarree())
         functions.add_square(ax, -13.5, 0, 60, 75.5, colour='#191919' if plot_bg == 'black' else 'white')
         functions.add_square(ax, -30, -18, 68, 75, colour='#191919' if plot_bg == 'black' else 'white')
@@ -230,13 +224,13 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
         cbar.set_label('Cooling per 10% AMOC weakening [°C]', fontsize=14)
 
     season_str = 'Winter ' if season == 'djf' else 'Summer ' if season == 'jja' else ''
-    ste_str = ('relative ' if ste_relative else '') + 'standard errors' if plot_ste else 'scaling factors'
+    ste_str = ('relative ' if ste_relative else '') + 'standard errors' if plot_ste else 'cooling sensitivities'
     if plot_ste:
-        fig.suptitle(f'{"Annual" if season == "" else season_str.strip()} {ste_str} for all models', fontsize=16, y=0.95)
-    elif season == '':
-        fig.suptitle('Annual scaling factors for all models (a-h: preindustrial; i-p: combined forcing)', fontsize=16, y=0.92)
+        fig.suptitle(f'{"Annual" if season == "" else season_str.strip()} {ste_str} for all NAHosMIP models', fontsize=16, y=0.95)
     else:
-        fig.suptitle(season_str + 'scaling factors for all NAHosMIP models', fontsize=16, y=0.92)
+        _last = chr(ord('a') + 8 + len(add_plots) - 1)
+        _prefix = 'Annual' if season == '' else season_str.strip()
+        fig.suptitle(f'{_prefix} cooling sensitivities for all models (a-h: preindustrial; i-{_last}: combined forcing)', fontsize=16, y=0.92)
 
     ste_val = 'off' if not plot_ste else ('rel' if ste_relative else 'abs')
     savepath = f"../plots/FigSupp_multimodel_regression_maps_plotbg-{plot_bg}_season-{season or 'annual'}_ste-{ste_val}"
@@ -256,6 +250,7 @@ if __name__ == '__main__':
     ste_relative = False  # If True, plot relative standard errors (ste/coef), else absolute
 
     fig, savepath = make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_dict,
-                                season=season, plot_ste=plot_ste, ste_relative=ste_relative, plot_bg=plot_bg)
+                                reg_ds_giss=reg_ds_giss, season=season, plot_ste=plot_ste,
+                                ste_relative=ste_relative, plot_bg=plot_bg)
 
 # %%

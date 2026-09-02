@@ -17,7 +17,7 @@ importlib.reload(functions)
 
 ########################################
 # %%
-# SCALING-FACTOR CORRELATIONS (supplementary)
+# COOLING-SENSITIVITY CORRELATIONS (supplementary)
 #
 # Per model: EU-mean temperature sensitivity to AMOC weakening (y, °C per %
 # weakening from PI) against projected end-of-century AMOC weakening (x).
@@ -59,7 +59,7 @@ if __name__ == '__main__':
 # %%
 # HELPERS
 
-def _eu_mean(da, mask_region, mask_land):
+def eu_mean(da, mask_region, mask_land):
     """Area-weighted mean over (region ∩ ocean-masked-out) on a (lat, lon) DataArray."""
     return float(functions.weighted_area_lat(
         da.where(mask_region).where(mask_land == 0)
@@ -76,18 +76,15 @@ def _giss_masks(masks, region):
     return gm[region], gm['LAND']
 
 
-def _baseline_amoc(model, hosmip_reg_ds_dict, reg_ds_giss, baseline, gwl_data):
-    """AMOC denominator for % weakening, per `baseline`. Routes HosMIP vs GISS."""
-    if model == 'GISS-E2-1-G':
-        if baseline == 'pi':
-            return float(reg_ds_giss.AMOC_pi.item())
-    else:
-        if baseline == 'pi':
-            return float(hosmip_reg_ds_dict[model].AMOC_pi.item())
-    # baseline == 'hist_1850_1899'
-    return float(gwl_data[model]['amoc']
-                 .sel(scenar='his').sel(time=slice('1850', '1899'))
-                 .mean('time').item())
+def baseline_amoc(model, hosmip_reg_ds_dict, reg_ds_giss, baseline, gwl_data):
+    """AMOC denominator for % weakening. Since the 2026-05-25 harmonisation,
+    reg_ds AMOC_pi IS the hist 1850–1899 ensemble mean, so both `baseline`
+    options resolve to the same single source (verified equal to the gwl_data
+    hist mean to float precision, 2026-08-15). The `baseline` axis is
+    therefore vestigial (kept for filename stability); gwl_data stays in the
+    signature but is no longer consulted — that was a cache-drift channel."""
+    ds = reg_ds_giss if model == 'GISS-E2-1-G' else hosmip_reg_ds_dict[model]
+    return float(ds.AMOC_pi.item())
 
 
 def _hosmip_slope(multi_model_dict, hosmip_reg_ds_dict, model, region, season, window):
@@ -121,32 +118,36 @@ def _liu_ccsm4(multi_model_dict, region):
     mreg, mland = ds.mask.sel(region=region), ds.mask.sel(region='LAND')
     tas_diff = (ds.tas.sel(type='control', scenar='ghg', season='') -
                 ds.tas.sel(type='hosing',  scenar='ghg', season=''))
-    weakening = (ds.amoc.sel(type='control', scenar='ghg') -
-                 ds.amoc.sel(type='hosing',  scenar='ghg')) / \
-                ds.amoc.sel(type='control', scenar='pi') * 100
+    weakening = (ds.amoc.sel(type='control', scenar='ghg', season='') -
+                 ds.amoc.sel(type='hosing',  scenar='ghg', season='')) / \
+                ds.amoc.sel(type='control', scenar='pi', season='') * 100
     warming = (ds.tas.sel(type='control', scenar='ghg', season='') -
                ds.tas.sel(type='control', scenar='his', season=''))
-    return (_eu_mean(tas_diff, mreg, mland) / float(weakening.item()),
-            _eu_mean(warming, mreg, mland))
+    return (eu_mean(tas_diff, mreg, mland) / float(weakening.item()),
+            eu_mean(warming, mreg, mland))
 
 
 def _vwb_cesm1(multi_model_dict, region):
-    """CESM1 (van Westen-Baatsen) slope + warming proxy from the double-difference pair."""
+    """CESM1 (van Westen-Baatsen) slope + warming proxy from the double-difference pair.
+
+    Annual, so all four corners are measured (the CESM_0600_PI field comes from
+    the hydroclimate record; only DJF still estimates it).
+    Only reachable via include_ccsm4_cesm1=True."""
     ds = multi_model_dict['CESM1']
     mreg, mland = ds.mask.sel(region=region), ds.mask.sel(region='LAND')
     tas_diff = ((ds.tas.sel(type='hosing',  scenar='ghg', season='') -
                  ds.tas.sel(type='hosing',  scenar='pi',  season='')) -
                 (ds.tas.sel(type='control', scenar='ghg', season='') -
                  ds.tas.sel(type='control', scenar='pi',  season='')))
-    amoc_diff = ((ds.amoc.sel(type='control', scenar='ghg') -
-                  ds.amoc.sel(type='control', scenar='pi')) -
-                 (ds.amoc.sel(type='hosing',  scenar='ghg') -
-                  ds.amoc.sel(type='hosing',  scenar='pi'))) / \
-                ds.amoc.sel(type='control', scenar='pi') * 100
+    amoc_diff = ((ds.amoc.sel(type='control', scenar='ghg', season='') -
+                  ds.amoc.sel(type='control', scenar='pi',  season='')) -
+                 (ds.amoc.sel(type='hosing',  scenar='ghg', season='') -
+                  ds.amoc.sel(type='hosing',  scenar='pi',  season=''))) / \
+                ds.amoc.sel(type='control', scenar='pi', season='') * 100
     warming = (ds.tas.sel(type='control', scenar='ghg', season='') -
                ds.tas.sel(type='control', scenar='pi',  season=''))
-    return (_eu_mean(tas_diff, mreg, mland) / float(amoc_diff.item()),
-            _eu_mean(warming, mreg, mland))
+    return (eu_mean(tas_diff, mreg, mland) / float(amoc_diff.item()),
+            eu_mean(warming, mreg, mland))
 
 
 ########################################
@@ -166,12 +167,12 @@ def build_table(multi_model_dict, hosmip_reg_ds_dict,
         slope, ste = _hosmip_slope(multi_model_dict, hosmip_reg_ds_dict,
                                    model, region, season, window)
         rd = hosmip_reg_ds_dict[model]
-        amoc_base = _baseline_amoc(model, hosmip_reg_ds_dict, reg_ds_giss, baseline, gwl_data)
+        amoc_base = baseline_amoc(model, hosmip_reg_ds_dict, reg_ds_giss, baseline, gwl_data)
         mreg, mland = _hosmip_masks(multi_model_dict, model, region)
         wk, wm = {}, {}
         for ssp in ssps:
             wk[ssp] = (amoc_base - float(rd.AMOC_future.sel(scenar=ssp).item())) / amoc_base * 100
-            wm[ssp] = _eu_mean(rd.T_future.sel(scenar=ssp, season=season)
+            wm[ssp] = eu_mean(rd.T_future.sel(scenar=ssp, season=season)
                                - rd.T_pi.sel(season=season), mreg, mland)
         table[model] = {'slope': slope, 'ste': ste, 'weakening': wk, 'warming': wm,
                         'color': functions.hosmip_colors[model], 'marker': 'o'}
@@ -180,12 +181,12 @@ def build_table(multi_model_dict, hosmip_reg_ds_dict,
         # reg_ds_giss_panel may be a season-keyed dict (pipeline convention) or a flat Dataset.
         panel = reg_ds_giss_panel.get(season) if isinstance(reg_ds_giss_panel, dict) else reg_ds_giss_panel
         slope, ste = _giss_slope(panel, region, window, giss_time_period)
-        amoc_base = _baseline_amoc('GISS-E2-1-G', hosmip_reg_ds_dict, reg_ds_giss, baseline, gwl_data)
+        amoc_base = baseline_amoc('GISS-E2-1-G', hosmip_reg_ds_dict, reg_ds_giss, baseline, gwl_data)
         mreg, mland = _giss_masks(masks, region)
         wk, wm = {}, {}
         for ssp in ssps:
             wk[ssp] = (amoc_base - float(reg_ds_giss.AMOC_future.sel(scenar=ssp).item())) / amoc_base * 100
-            wm[ssp] = _eu_mean(reg_ds_giss.T_future.sel(scenar=ssp, season=season)
+            wm[ssp] = eu_mean(reg_ds_giss.T_future.sel(scenar=ssp, season=season)
                                - reg_ds_giss.T_pi.sel(season=season), mreg, mland)
         table['GISS-E2-1-G'] = {'slope': slope, 'ste': ste, 'weakening': wk, 'warming': wm,
                                 'color': EXTRA_COLORS['GISS-E2-1-G'], 'marker': EXTRA_MARKERS['GISS-E2-1-G']}
@@ -211,11 +212,14 @@ def build_table(multi_model_dict, hosmip_reg_ds_dict,
 # FIGURE FUNCTION
 
 _X_AXIS_OPTIONS = ('weakening', 'warming', 'warming_over_weakening', 'combined')
-_BASE_LABEL     = {'pi': 'piControl', 'hist_1850_1899': '1850–1899'}
-_SSP_TITLE      = {'ssp126': 'SSP1-2.6', 'ssp245': 'SSP2-4.5', 'ssp370': 'SSP3-7.0'}
+# Both baselines resolve to the hist 1850–1899 mean since the 2026-05-25
+# harmonisation (the old 'piControl' label was stale — reg_ds AMOC_pi is no
+# longer a piControl snapshot).
+_BASE_LABEL     = {'pi': '1850–1899', 'hist_1850_1899': '1850–1899'}
+SSP_TITLE      = {'ssp126': 'SSP1-2.6', 'ssp245': 'SSP2-4.5', 'ssp370': 'SSP3-7.0'}
 
 
-def _xy(info, panel, ssps, x_axis):
+def model_xy(info, panel, ssps, x_axis):
     """Return (x, y) for one model on one panel. `panel` is an SSP key or 'mean'.
     For x_axis in {'weakening','warming'} y is the model-level regression slope
     (constant across panels). For x_axis == 'warming_over_weakening' (literally
@@ -265,11 +269,12 @@ def make_figure(table=None, *, multi_model_dict=None, hosmip_reg_ds_dict=None,
         plt.rcParams['axes.facecolor'] = '#191919'
         plt.rcParams['figure.facecolor'] = '#191919'
     text_color = 'black' if plot_bg != 'black' else 'white'
+    grey = '0.45' if plot_bg != 'black' else '0.65'
 
     frac_unit  = r'$\left[\frac{^\circ\mathrm{C}}{\%}\right]$'
     x_wk_label = rf'$\Delta$AMOC$_{{2090{{-}}2100}}$  [%, vs {_BASE_LABEL[baseline]}]'
     x_wm_label = rf'$\Delta T_\mathrm{{{region},\,2090{{-}}2100}}$  [$^\circ$C, vs {_BASE_LABEL[baseline]}]'
-    y_sf_label = rf'Scaling factor  {frac_unit}'
+    y_sf_label = rf'Cooling sensitivity  {frac_unit}'
 
     x_label = {
         'weakening':              x_wk_label,
@@ -281,10 +286,38 @@ def make_figure(table=None, *, multi_model_dict=None, hosmip_reg_ds_dict=None,
 
     panels = list(ssps) + ['mean']
 
+    def _draw_fit(ax, panel, x_mode):
+        """OLS line + 95% CI band + stats box over the 8 NAHosMIP models
+        (GISS and the literature add-ons are shown but stay out of the line,
+        matching the canonical hosing calibration fit). Prints the stats so
+        every quoted number has a text source."""
+        pts = [model_xy(table[m], panel, ssps, x_mode)
+               for m in functions.hosmip_labels if m in table]
+        pts = [(x, y) for x, y in pts if np.isfinite(x) and np.isfinite(y)]
+        if len(pts) < 3:
+            return
+        x = np.array([p[0] for p in pts])
+        y = np.array([p[1] for p in pts])
+        fit = sm.OLS(y, sm.add_constant(x)).fit()
+        xg = np.linspace(0, x.max() * 1.1, 100)
+        sf = fit.get_prediction(sm.add_constant(xg)).summary_frame(alpha=0.05)
+        ax.fill_between(xg, sf['mean_ci_lower'], sf['mean_ci_upper'],
+                        color=grey, alpha=0.15, linewidth=0, zorder=1)
+        ax.plot(xg, sf['mean'], color=grey, lw=1.2, zorder=1)
+        ax.text(0.97, 0.97,
+                f"slope = {fit.params[1]:.4f} ± {fit.bse[1]:.4f}\n"
+                f"R² = {fit.rsquared:.2f}, p = {fit.pvalues[1]:.3f}, n = {int(fit.nobs)}",
+                transform=ax.transAxes, fontsize=8, color=text_color,
+                ha='right', va='top')
+        print(f"[fit {x_mode} @ {panel}] slope={fit.params[1]:.5f} "
+              f"se={fit.bse[1]:.5f} R2={fit.rsquared:.3f} "
+              f"p={fit.pvalues[1]:.4f} n={int(fit.nobs)} "
+              f"intercept={fit.params[0]:.5f}")
+
     def _render_cell(ax, panel, x_mode):
-        """Scatter all models on one cell using `_xy(..., x_mode)`. No spine / title work."""
+        """Scatter all models on one cell using `model_xy(..., x_mode)`. No spine / title work."""
         for model, info in table.items():
-            x, y = _xy(info, panel, ssps, x_mode)
+            x, y = model_xy(info, panel, ssps, x_mode)
             if not (np.isfinite(x) and np.isfinite(y)):
                 continue
             ax.scatter(x, y, color=info['color'], marker=info['marker'],
@@ -295,11 +328,12 @@ def make_figure(table=None, *, multi_model_dict=None, hosmip_reg_ds_dict=None,
             label = f'{model} (RCP8.5)' if panel == 'ssp370' and model in ('CCSM4', 'CESM1') else model
             ax.annotate(label, xy=(x, y), xytext=(4, 4),
                         textcoords='offset points', fontsize=8, color=info['color'])
+        _draw_fit(ax, panel, x_mode)
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
 
     def _ssp_title(ax, panel, prefix=''):
-        title = _SSP_TITLE.get(panel, f'Mean across {", ".join(_SSP_TITLE[s] for s in ssps)}')
+        title = SSP_TITLE.get(panel, f'Mean across {", ".join(SSP_TITLE[s] for s in ssps)}')
         title_color = functions.hosing_colors[panel]['ge'] if panel in functions.hosing_colors else text_color
         ax.text(0.0, 1.03, f'{prefix}{title}', transform=ax.transAxes,
                 fontsize=14, fontweight='bold', color=title_color, ha='left', va='bottom')
@@ -311,7 +345,7 @@ def make_figure(table=None, *, multi_model_dict=None, hosmip_reg_ds_dict=None,
         for info in table.values():
             it = ssps if panel is None else [panel]
             for ssp in it:
-                x, _ = _xy(info, ssp, ssps, x_mode)
+                x, _ = model_xy(info, ssp, ssps, x_mode)
                 if np.isfinite(x): xs.append(x)
         return (0.0, max(xs) * 1.1) if xs else (0.0, 1.0)
 
@@ -338,20 +372,25 @@ def make_figure(table=None, *, multi_model_dict=None, hosmip_reg_ds_dict=None,
             axes[1, col].set_xlabel(x_wk_label)
 
         # a) / b) at the top-left of each row, slightly above the SSP title row.
-        axes[0, 0].text(0.0, 1.18, 'a) Scaling factors over projected warming',   transform=axes[0, 0].transAxes,
+        axes[0, 0].text(0.0, 1.18, 'a) Cooling sensitivities over projected warming',   transform=axes[0, 0].transAxes,
                         fontsize=15, fontweight='bold', color=text_color, ha='left', va='bottom')
-        axes[1, 0].text(0.0, 1.03, 'b) Scaling factors over projected weakening', transform=axes[1, 0].transAxes,
+        axes[1, 0].text(0.0, 1.03, 'b) Cooling sensitivities over projected weakening', transform=axes[1, 0].transAxes,
                         fontsize=15, fontweight='bold', color=text_color, ha='left', va='bottom')
 
         for r in range(2):
             axes[r, 0].set_ylabel(y_sf_label)
 
         fig.subplots_adjust(wspace=0.08, hspace=0.35)
-        savepath = (f'{savedir}/FigSupp_scaling_factor_correlations'
-                    f'_x-{x_axis}_baseline-{baseline}_region-{region}'
+        fig.text(0.5, 0.02, 'Grey line: OLS over the 8 NAHosMIP models, with the 95% CI of '
+                 'the fitted line. GISS and literature estimates are shown but not fitted.',
+                 fontsize=9, color=text_color, ha='center', va='top')
+        savepath = (f'{savedir}/FigSupp_cooling_sensitivity_correlations'
+                    f'_x-{x_axis.replace("_", "-")}'
+                    f'_base-{baseline.replace("hist_", "hist").replace("_", "-")}_region-{region}'
                     f'_season-{season or "annual"}_window-{window}'
                     f'_giss-{int(include_giss)}_meehl-{int(include_ccsm4_cesm1)}'
                     f'_plotbg-{plot_bg}')
+        functions.check_savepath(savepath)
         fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight', transparent=plot_bg == 'black')
         fig.savefig(savepath + '.pdf', dpi=400, bbox_inches='tight', transparent=plot_bg == 'black')
         return fig, savepath
@@ -363,7 +402,7 @@ def make_figure(table=None, *, multi_model_dict=None, hosmip_reg_ds_dict=None,
     xs_all, ys_all = [], []
     for info in table.values():
         for ssp in ssps:
-            x, y = _xy(info, ssp, ssps, x_axis)
+            x, y = model_xy(info, ssp, ssps, x_axis)
             if np.isfinite(x): xs_all.append(x)
             if np.isfinite(y): ys_all.append(y)
     x_lo, x_hi = (0.0, max(xs_all) * 1.1) if xs_all else (0.0, 1.0)
@@ -387,12 +426,17 @@ def make_figure(table=None, *, multi_model_dict=None, hosmip_reg_ds_dict=None,
         ax.set_ylabel(y_label)
 
     fig.subplots_adjust(wspace=0.08, hspace=0.22)
+    fig.text(0.5, 0.04, 'Grey line: OLS over the 8 NAHosMIP models, with the 95% CI of '
+             'the fitted line. GISS and literature estimates are shown but not fitted.',
+             fontsize=9, color=text_color, ha='center', va='top')
 
-    savepath = (f'{savedir}/FigSupp_scaling_factor_correlations'
-                f'_x-{x_axis}_baseline-{baseline}_region-{region}'
+    savepath = (f'{savedir}/FigSupp_cooling_sensitivity_correlations'
+                f'_x-{x_axis.replace("_", "-")}'
+                f'_base-{baseline.replace("hist_", "hist").replace("_", "-")}_region-{region}'
                 f'_season-{season or "annual"}_window-{window}'
                 f'_giss-{int(include_giss)}_meehl-{int(include_ccsm4_cesm1)}'
                 f'_plotbg-{plot_bg}')
+    functions.check_savepath(savepath)
     fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight',
                 transparent=plot_bg == 'black')
     fig.savefig(savepath + '.pdf', dpi=400, bbox_inches='tight',
