@@ -1,4 +1,2109 @@
 {
+  "cmip_range_fig3.nc": {
+    "checksum": 195125.625196,
+    "n_nonfinite": 104,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50690
+  },
+  "cmip_range_fig3_cal-consistentssp.nc": {
+    "checksum": 140700.187238,
+    "n_nonfinite": 159,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50697
+  },
+  "cmip_range_fig3_cal-full.nc": {
+    "checksum": 296501.56172,
+    "n_nonfinite": 94,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50688
+  },
+  "cmip_range_fig3_cal-nocesm2.nc": {
+    "checksum": 197702.28735,
+    "n_nonfinite": 87,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50691
+  },
+  "cmip_range_fig3_pred-wt.nc": {
+    "checksum": 201416.824766,
+    "n_nonfinite": 129,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50691
+  },
+  "cmip_range_fig3_sdep-interact.nc": {
+    "checksum": 282055.073506,
+    "n_nonfinite": 62,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50694
+  },
+  "cmip_range_fig3_sdep-interact_cal-consistentssp.nc": {
+    "checksum": 293024.251094,
+    "n_nonfinite": 114,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50701
+  },
+  "cmip_range_fig3_sdep-interact_cal-full.nc": {
+    "checksum": 282084.587828,
+    "n_nonfinite": 62,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50692
+  },
+  "cmip_range_fig3_sdep-interact_cal-nocesm2.nc": {
+    "checksum": 196761.128539,
+    "n_nonfinite": 66,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50695
+  },
+  "cmip_range_fig3_sdep-pooled.nc": {
+    "checksum": 414004.310936,
+    "n_nonfinite": 95,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50692
+  },
+  "cmip_range_fig3_sdep-pooled_cal-consistentssp.nc": {
+    "checksum": 218169.907793,
+    "n_nonfinite": 143,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50699
+  },
+  "cmip_range_fig3_sdep-pooled_cal-full.nc": {
+    "checksum": 414033.825258,
+    "n_nonfinite": 95,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50690
+  },
+  "cmip_range_fig3_sdep-pooled_cal-nocesm2.nc": {
+    "checksum": 275396.788555,
+    "n_nonfinite": 63,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50693
+  },
+  "cmip_range_fig3_sdep-pooled_fw2071-2080.nc": {
+    "checksum": 380923.976873,
+    "n_nonfinite": 77,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50692
+  },
+  "cmip_range_fig3_sdep-pooled_pred-wt.nc": {
+    "checksum": 202298.691031,
+    "n_nonfinite": 125,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50693
+  },
+  "cmip_range_fig3_sdep-pooled_season-djf.nc": {
+    "checksum": 200722.810999,
+    "n_nonfinite": 121,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50692
+  },
+  "cmip_range_fig3_sdep-pooled_season-jja.nc": {
+    "checksum": 324557.134102,
+    "n_nonfinite": 139,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50692
+  },
+  "cmip_range_fig3_season-djf.nc": {
+    "checksum": 217018.831862,
+    "n_nonfinite": 112,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50690
+  },
+  "cmip_range_fig3_season-jja.nc": {
+    "checksum": 489466.897493,
+    "n_nonfinite": 123,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50690
+  },
+  "cmip_synth_wt_EU.nc": {
+    "checksum": 37635.787698,
+    "n_nonfinite": 32,
+    "shape": {
+      "baseline_amoc": [
+        "model",
+        "scenario"
+      ],
+      "baseline_tas_eu": [
+        "model",
+        "scenario",
+        "season"
+      ],
+      "n_real": [
+        "model",
+        "scenario"
+      ],
+      "t": [
+        "model",
+        "scenario",
+        "season"
+      ],
+      "w": [
+        "model",
+        "scenario"
+      ]
+    },
+    "size_bytes": 13930
+  },
+  "cmip_synth_wt_countries.nc": {
+    "checksum": 1228073.591904,
+    "n_nonfinite": 872,
+    "shape": {
+      "baseline_amoc": [
+        "model",
+        "scenario"
+      ],
+      "baseline_tas": [
+        "model",
+        "scenario",
+        "region",
+        "season"
+      ],
+      "n_real": [
+        "model",
+        "scenario"
+      ],
+      "t": [
+        "model",
+        "scenario",
+        "region",
+        "season"
+      ],
+      "w": [
+        "model",
+        "scenario"
+      ]
+    },
+    "size_bytes": 91044
+  },
+  "cmip_synth_wt_countries_fw2071-2080.nc": {
+    "checksum": 1225768.649618,
+    "n_nonfinite": 872,
+    "shape": {
+      "baseline_amoc": [
+        "model",
+        "scenario"
+      ],
+      "baseline_tas": [
+        "model",
+        "scenario",
+        "region",
+        "season"
+      ],
+      "n_real": [
+        "model",
+        "scenario"
+      ],
+      "t": [
+        "model",
+        "scenario",
+        "region",
+        "season"
+      ],
+      "w": [
+        "model",
+        "scenario"
+      ]
+    },
+    "size_bytes": 91044
+  },
   "hosmip_masks.pkl": {
     "checksum": 0.0,
     "len": 8,
@@ -16,9 +2121,9 @@
     "type": "dict"
   },
   "hosmip_reg_ds_dict.pkl": {
-    "checksum": 36259083.9499,
+    "checksum": 40064272.541,
     "len": 8,
-    "size_bytes": 14886537,
+    "size_bytes": 14886568,
     "top_level_keys": [
       "CESM2",
       "CanESM5",
@@ -32,9 +2137,9 @@
     "type": "dict"
   },
   "multi_model_dict.pkl": {
-    "checksum": 117943276.9766,
+    "checksum": 135562888.2594,
     "len": 10,
-    "size_bytes": 281913819,
+    "size_bytes": 282054801,
     "top_level_keys": [
       "CCSM4",
       "CESM1",
@@ -50,7 +2155,8 @@
     "type": "dict"
   },
   "reg_ds_cesm.nc": {
-    "checksum": 1476156.618817,
+    "checksum": 4508140.865224,
+    "n_nonfinite": 89101,
     "shape": {
       "AMOC_future": [
         "scenar"
@@ -59,80 +2165,97 @@
       "T_future": [
         "lat",
         "lon",
+        "season",
         "scenar"
       ],
       "T_pd_245": [
         "lat",
-        "lon"
+        "lon",
+        "season"
       ],
       "T_pi": [
         "lat",
-        "lon"
+        "lon",
+        "season"
       ],
       "coef_ensmean": [
         "lat",
-        "lon"
+        "lon",
+        "season"
       ],
       "coef_ensmean_intercept": [
         "lat",
-        "lon"
+        "lon",
+        "season"
       ],
       "coef_ssp": [
         "lat",
         "lon",
+        "season",
         "scenar"
       ],
       "req_strength_pd": [
         "lat",
         "lon",
+        "season",
         "scenar"
       ],
       "req_strength_pi": [
         "lat",
         "lon",
+        "season",
         "scenar"
       ],
       "req_weakening_pd": [
         "lat",
         "lon",
+        "season",
         "scenar"
       ],
       "req_weakening_pi": [
         "lat",
         "lon",
+        "season",
         "scenar"
       ],
       "rsq_ensmean": [
         "lat",
-        "lon"
+        "lon",
+        "season"
       ],
       "rsq_ensmean_intercept": [
         "lat",
-        "lon"
+        "lon",
+        "season"
       ],
       "rsq_ssp": [
         "lat",
         "lon",
+        "season",
         "scenar"
       ],
       "ste_ensmean": [
         "lat",
-        "lon"
+        "lon",
+        "season"
       ],
       "ste_ensmean_intercept": [
         "lat",
-        "lon"
+        "lon",
+        "season"
       ],
       "ste_ssp": [
         "lat",
         "lon",
+        "season",
         "scenar"
       ]
     },
-    "size_bytes": 886016
+    "size_bytes": 2614038
   },
   "reg_ds_mpi_tas.nc": {
-    "checksum": 2370637.675049,
+    "checksum": 2419884.958299,
+    "n_nonfinite": 0,
     "shape": {
       "AMOC_future": [
         "season",
