@@ -42,6 +42,37 @@ TRACKED_FILES = [
     "hosmip_masks.pkl",
     "hosmip_reg_ds_dict.pkl",
     "multi_model_dict.pkl",
+    # Synthetic CMIP6 range caches (schema v2, 2026-08-31): the 12 annual
+    # statedep x calset variants + 4 seasonal at the default cal set, plus
+    # the two target (w, t) caches. Untagged = the defaults (hosing, w —
+    # predictors default flipped back to 'w' on 2026-09-01).
+    "cmip_range_fig3.nc",
+    "cmip_range_fig3_cal-full.nc",
+    "cmip_range_fig3_cal-nocesm2.nc",
+    "cmip_range_fig3_cal-consistentssp.nc",
+    "cmip_range_fig3_sdep-pooled.nc",
+    "cmip_range_fig3_sdep-pooled_cal-full.nc",
+    "cmip_range_fig3_sdep-pooled_cal-nocesm2.nc",
+    "cmip_range_fig3_sdep-pooled_cal-consistentssp.nc",
+    "cmip_range_fig3_sdep-interact.nc",
+    "cmip_range_fig3_sdep-interact_cal-full.nc",
+    "cmip_range_fig3_sdep-interact_cal-nocesm2.nc",
+    "cmip_range_fig3_sdep-interact_cal-consistentssp.nc",
+    "cmip_range_fig3_season-djf.nc",
+    "cmip_range_fig3_season-jja.nc",
+    "cmip_range_fig3_sdep-pooled_season-djf.nc",
+    "cmip_range_fig3_sdep-pooled_season-jja.nc",
+    # wt-conditioning references (2026-09-01 mirror of the former pred-w
+    # siblings): the two wt caches kept for w-vs-wt comparisons.
+    "cmip_range_fig3_pred-wt.nc",
+    "cmip_range_fig3_sdep-pooled_pred-wt.nc",
+    # Decade-matched siblings for FigSupp_cmip_cooling (2026-09-01, schema v3
+    # fw threading): target (w, t) at 2071-2080 (Levante-built) + the pooled
+    # range on it. Skip (no baseline) until first built.
+    "cmip_synth_wt_countries_fw2071-2080.nc",
+    "cmip_range_fig3_sdep-pooled_fw2071-2080.nc",
+    "cmip_synth_wt_EU.nc",
+    "cmip_synth_wt_countries.nc",
 ]
 
 
@@ -49,18 +80,25 @@ def _fingerprint_netcdf(path: Path) -> dict:
     ds = xr.open_dataset(path)
     try:
         shape = {var: list(ds[var].dims) for var in ds.data_vars}
-        # Sum of every numeric variable, rounded to 6 decimals. Tolerant
-        # of float-rounding on resave; sensitive to actual data shifts.
+        # Sum of every numeric variable over its FINITE entries, rounded to 6
+        # decimals: tolerant of float-rounding on resave, sensitive to actual
+        # data shifts, and not blinded by the deliberate +inf entries in the
+        # Synthetic CMIP6 range caches (a nansum there would be inf and mask
+        # every change in the finite variables). Non-finite entries are
+        # counted separately.
         total = 0.0
+        n_nonfinite = 0
         for var in sorted(ds.data_vars):
             arr = np.asarray(ds[var].values)
             if np.issubdtype(arr.dtype, np.number):
-                s = float(np.nansum(arr))
+                s = float(arr[np.isfinite(arr)].sum())
                 total += round(s, 6)
+                n_nonfinite += int((~np.isfinite(arr)).sum())
         return {
             "size_bytes": path.stat().st_size,
             "shape": shape,
             "checksum": round(total, 6),
+            "n_nonfinite": n_nonfinite,
         }
     finally:
         ds.close()
