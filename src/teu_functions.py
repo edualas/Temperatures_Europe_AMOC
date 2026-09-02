@@ -20,6 +20,7 @@ import cartopy.io.shapereader as shpreader
 from shapely.geometry import LineString, Polygon
 from shapely.ops import split, unary_union
 import xarray as xr
+import cftime
 import regionmask
 import statsmodels.api as sm
 from scipy import stats as scipy_stats
@@ -42,7 +43,33 @@ import cmip6_inventory # type: ignore
 global_plot_bg = 'white'
 
 data_path = '/work/uo1075/m300817/teu_amoc/data/'
+if not os.path.isdir(data_path):  # off-Levante: raw subset mirrored into the local data dir
+    data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data') + '/'
 local_path = '/home/m/m300940/teu_amoc/data/'
+if not os.path.isdir(local_path):  # off-Levante (local cache mirror): repo-relative
+    local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data') + '/'
+# van Westen & Baatsen European tas: annual measured for all four corners
+# (Zenodo 16905376), DJF from the visualisation record (Zenodo 15490235) where
+# the CESM_0600_PI corner is unpublished and estimated. See get_other_studies_data.
+vwb_hc_path = '/work/bu1431/T_EU_AMOC/vanWesten_hydroclimate_zenodo16905376/'
+vwb_viz_path = '/work/bu1431/T_EU_AMOC/vanWesten_visualisation_zenodo15490235/'
+if not os.path.isdir(vwb_hc_path):  # off-Levante: mirrored into the local data dir
+    _d = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
+    vwb_hc_path = _d + '/vanWesten_hydroclimate_zenodo16905376/'
+    vwb_viz_path = _d + '/vanWesten_visualisation_zenodo15490235/'
+vwb_0600_pi_path = None
+VWB_SEASONS = {'': 'TEMP_2m', 'djf': 'TEMP_2m_DJF'}
+VWB_HC_WINDOWS = {'0600_PI': (1000, 1099), '1500_PI': (1900, 1999),
+                  '0600_RCP45': (2400, 2499), '1500_RCP45': (2400, 2499)}
+VWB_DPI_R = {'djf': (1.0, 0.97, 1.03)}
+# Boot et al. (2024) TREFHT is monthly, so all three seasons are derivable.
+# The four legs start unevenly (control 2015-01, hosing 2015-03), so every
+# reduction is sliced to the common window the annual AMOC files already use.
+BOOT_SEASONS = ['', 'djf', 'jja']
+BOOT_WINDOW = ('2016', '2100')
+boot_bu1431_path = '/work/bu1431/T_EU_AMOC/Boot2024/'
+if not os.path.isdir(boot_bu1431_path):  # off-Levante: amoc26 files mirrored into data/Boot2024
+    boot_bu1431_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'Boot2024') + '/'
 # CMIP6 AMOC-weakening envelope sidecar (see compute_amoc_extent).
 AMOC_EXTENT_CACHE = local_path + 'cmip6_amoc_extent.json'
 # Sidecar keys for the four (aggregation, unit) envelope variants.
@@ -54,6 +81,8 @@ AMOC_EXTENT_KEYS = {
 # CMIP6 raw-data root + per-model documented (physics, forcing) variant: only
 # r{N}i1{p}{f} files are admitted; the integer N's come from disk.
 cmip6_data_path = '/work/uo1075/m300817/teu_amoc/data/CMIP6/'
+if not os.path.isdir(cmip6_data_path):  # off-Levante: subset mirrored into data/CMIP6
+    cmip6_data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'CMIP6') + '/'
 MODEL_PHYSICS_FORCING = {
         'HadGEM3-GC3-1LL': ('p1', 'f3'),
         'HadGEM3-GC3-1MM': ('p1', 'f3'),
@@ -115,6 +144,8 @@ GISS_NON_COMPOSITE = [m for m in GISS_MEMBERS if m not in GISS_COMPOSITE]
 GISS_TIME_PERIODS = [('2015', '2500'), ('2101', '2300')]
 GISS_STAGING_PATH = '/work/bu1431/T_EU_AMOC/CMIP6/giss-e2-1-g/cmip_proj_staging/'
 GISS_PROCESSED_PATH = '/work/bu1431/T_EU_AMOC/CMIP6/giss-e2-1-g/processed/'
+if not os.path.isdir(GISS_PROCESSED_PATH):  # off-Levante: processed mirrored; staging not
+    GISS_PROCESSED_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'giss_processed') + '/'
 
 # NAMED SCIENTIFIC CONSTANTS
 # These were previously inlined throughout the regression engine. Lifting them
@@ -144,10 +175,12 @@ ALLOWED_PLOT_BG = ('white', 'black')
 
 ssps = ['ssp126', 'ssp245', 'ssp370']
 
-# regions = ['RU', 'NO', 'FR', 'SE', 'BY', 'UA', 'PL', 'AT', 'HU', 'MD', 'RO', 'LT', 'LV', 'EE', 'DE', 'BG', 'GR', 'TR', 'HR', 'CH', 'BE', 'NL', 'PT', 'ES', 'IE', 'IT', 'DK', 'GB', 'SI', 'FI', 'SK', 'CZ', 'MK', 'RS', 'XK', 'IS']
 
 # these are sorted by effect size in range plot for both MPI-ESM and CESM2 data
 regions = ['IE', 'GB', 'IS', 'NO', 'NL', 'DK', 'SE', 'BE', 'PT', 'FI', 'EE', 'FR', 'LT', 'LV', 'DE', 'LU', 'RU', 'PL', 'BY', 'ES', 'CZ', 'UA', 'MD', 'SK', 'CH', 'AT', 'RO', 'GR', 'BG', 'HU', 'AL', 'TR', 'HR', 'ME', 'RS', 'IT', 'XK', 'SI', 'BA', 'MK', 'CY']
+
+# Panel-e row set (countries >= ~30k km²; the 7 smallest dropped).
+regions_cutoff30k = [r for r in regions if r not in ['LU', 'CY', 'XK', 'ME', 'SI', 'MK', 'AL']]
 
 ssp_labels = {
     "ssp126": "SSP1-2.6",
@@ -429,6 +462,59 @@ def validate_choice(name, value, allowed):
         )
 
 
+def reset_djf_time(ds):
+    """Shift each DJF time stamp by +1 year (Dec[N] → Jan[N+1] convention).
+
+    Lifted from data_process.ipynb cell 17.
+    """
+    new_time = [
+        cftime.DatetimeProlepticGregorian(d.year + 1, 1, d.day)
+        for d in ds['time'].values
+    ]
+    ds = ds.assign_coords(time=new_time)
+    return ds
+
+
+def seasonalize(monthly, season, start_year=None):
+    """Monthly → seasonal yearly, calendar-normalised.
+
+    Resample, season-select, drop trailing partial year (DJF only),
+    shift-Dec-to-Jan (DJF only), reassign time axis to a clean
+    proleptic_gregorian year-start range.
+
+    Both seasons anchor on ``QS-DEC``, so the bins are the true DJF, MAM,
+    JJA, SON quarters. The JJA branch used a January-anchored ``QS`` until
+    2026-08-21, which put months 7-8-9 in the bin labelled JJA.
+    Switching the anchor
+    changes values only, not the bin count or the time axis.
+
+    ``start_year=None`` keeps each bin's own year instead of renumbering
+    from a caller-supplied origin. Needed whenever the monthly series does
+    not begin in January and the resulting label therefore cannot be
+    predicted from the file name — the Boot et al. hosing legs start
+    2015-03, so their first DJF bin is 2016 while the control legs' is a
+    partial 2015. Callers that do know the origin still pass it.
+    """
+    if season == 'djf':
+        seas = monthly.resample(time='QS-DEC').mean(dim='time')
+        out = seas.sel(time=seas.time.dt.season == 'DJF').isel(time=slice(None, -1))
+        out = reset_djf_time(out)
+    elif season == 'jja':
+        seas = monthly.resample(time='QS-DEC').mean(dim='time')
+        out = seas.sel(time=seas.time.dt.season == 'JJA')
+    else:
+        raise ValueError(f'season must be djf or jja, got {season!r}')
+
+    # 4-digit ISO year (e.g. start_year=1 → '0001'); matches data_process
+    # cell 263 which used start='0001' for piControl, '2015' for SSPs.
+    if start_year is None:
+        start_year = out.time.values[0].year
+    new_time = xr.cftime_range(
+        start=f'{int(start_year):04d}', periods=out.sizes['time'],
+        freq='YS', calendar='proleptic_gregorian')
+    return out.assign_coords(time=new_time)
+
+
 def get_hist_pi_baseline(model, var, cmip6_ctrl_data=None,
                          multi_model_dict=None, season=''):
     """1850–1899 CMIP6 historical ensemble-mean baseline.
@@ -452,10 +538,26 @@ def get_hist_pi_baseline(model, var, cmip6_ctrl_data=None,
             f"get_hist_pi_baseline needs cmip6_ctrl_data[{model!r}].")
     ds = cmip6_ctrl_data[model]
     if var == 'amoc':
-        return float(ds['amoc'].sel(scenar='his')
-                     .sel(time=slice(*PI_WINDOW)).mean('time').values)
-    return ds['tas'].sel(scenar='his', season=season) \
-                    .sel(time=slice(*PI_WINDOW)).mean('time')
+        out = float(ds['amoc'].sel(scenar='his')
+                    .sel(time=slice(*PI_WINDOW)).mean('time').values)
+        if not np.isfinite(out):
+            raise ValueError(
+                f"get_hist_pi_baseline({model!r}, 'amoc') is not finite. "
+                f"The historical AMOC slot is empty; fix the loader rather "
+                f"than caching NaN.")
+        return out
+    out = ds['tas'].sel(scenar='his', season=season) \
+                   .sel(time=slice(*PI_WINDOW)).mean('time')
+    # An all-NaN return means get_cmip_projections never populated this
+    # (model, season) slot — the 2026-05-25 (d) failure, where phantom
+    # seasonal slots were silently cached into hosmip_reg_ds_dict. Refuse
+    # rather than let the next consumer poison a cache again.
+    if not bool(np.isfinite(out).any()):
+        raise ValueError(
+            f"get_hist_pi_baseline({model!r}, 'tas', season={season!r}) is "
+            f"all-NaN — the historical {season or 'annual'} slot was never "
+            f"populated.")
+    return out
 
 
 def resolve_future_window(future_window=None):
@@ -480,6 +582,15 @@ def fw_suffix(future_window=None):
     so canonical filenames are byte-unchanged; ``_fw-{start}-{end}`` otherwise."""
     fw = resolve_future_window(future_window)
     return '' if fw == FUTURE_WINDOW else f'_fw-{fw[0]}-{fw[1]}'
+
+
+def check_savepath(savepath, exts=('.png', '.pdf')):
+    """Overleaf rejects basenames longer than 150 characters — fail the save
+    loudly instead of shipping an unuploadable figure (2026-08-31)."""
+    base = os.path.basename(savepath)
+    for ext in exts:
+        assert len(base + ext) <= 150, \
+            f"figure basename {base + ext!r} is {len(base + ext)} chars (>150)"
 
 
 def amoc_extent_cache_path(future_window=None):
@@ -1463,8 +1574,12 @@ def get_regression_ds(data_dict, season='', var='tas', future_window=None):
         ssp_index = list(reg_ds.scenar.values).index(ssp_i)
         reg_ds.T_future.values[ssp_index, :, :] = data_dict[season][var]['ssp'].mean(dim='realiz').sel(time=slice(*fw)).mean(dim='time').sel(scenar=ssp_i)[var]
         reg_ds.T_pd_245.values[:, :] = xr.concat([data_dict[season][var]['his'].mean(dim='realiz').sel(time=slice(*PD_HIS_WINDOW)), data_dict[season][var]['ssp'].mean(dim='realiz').sel(time=slice(*PD_SSP_WINDOW), scenar='ssp245')], dim='time').mean(dim='time')[var]
-        reg_ds.req_strength_pi.loc[ssp_i].values[:, :] = reg_ds.AMOC_future.loc[ssp_i] - (reg_ds.T_future.loc[ssp_i] - reg_ds.T_pi) / reg_ds.coef_ensmean.values
-        reg_ds.req_strength_pd.loc[ssp_i].values[:, :] = reg_ds.AMOC_future.loc[ssp_i] - (reg_ds.T_future.loc[ssp_i] - reg_ds.T_pd_245) / reg_ds.coef_ensmean.values
+        # Cooling-sign filter (coef K/Sv > 0): the per-pixel inversion is
+        # undefined where warming accompanies weakening — NaN there, matching
+        # the HosMIP req convention (symmetric across sources since 2026-08-15).
+        _coef_cool = reg_ds.coef_ensmean.where(reg_ds.coef_ensmean > 0).values
+        reg_ds.req_strength_pi.loc[ssp_i].values[:, :] = reg_ds.AMOC_future.loc[ssp_i] - (reg_ds.T_future.loc[ssp_i] - reg_ds.T_pi) / _coef_cool
+        reg_ds.req_strength_pd.loc[ssp_i].values[:, :] = reg_ds.AMOC_future.loc[ssp_i] - (reg_ds.T_future.loc[ssp_i] - reg_ds.T_pd_245) / _coef_cool
         reg_ds.req_weakening_pi.loc[ssp_i].values[:, :] = convert_strength_to_weakening(reg_ds.req_strength_pi.loc[ssp_i].values)
         reg_ds.req_weakening_pd.loc[ssp_i].values[:, :] = convert_strength_to_weakening(reg_ds.req_strength_pd.loc[ssp_i].values)
 
@@ -1688,7 +1803,7 @@ def simulations_plot(data_dict, ssp='all', hos_type='all', season='', var='tas',
     plt.savefig(f'../plots/simulations_ssp-{ssp}_hos-{hos_type}_window-{window}_{region}_bg-{plot_bg}.png', dpi=400, bbox_inches='tight', transparent=True if plot_bg=='black' else False)
 
 
-def regression_plot(data_dict, lat=None, lon=None, region=None, var='tas', ssp='all', hos_type='all', hos_strength='all', window=10, regressions=True, combined_reg=True, no_plots=False, plot_bg='white', season='', ext_ax=None, xlim=(-8, 6), ylim=(-2.5, 1.5), equation_y_pos=0.95, equation_y_spacing=0.075, lag=0, compute_linearity=False, compute_scenario_independence=False, weakening_xaxis=True, simple_eqs=True, eqs_x=0.0):
+def regression_plot(data_dict, lat=None, lon=None, region=None, var='tas', ssp='all', hos_type='all', hos_strength='all', window=10, regressions=True, combined_reg=True, no_plots=False, plot_bg='white', season='', ext_ax=None, xlim=(-8, 6), ylim=(-2.5, 1.5), equation_y_pos=0.95, equation_y_spacing=0.075, lag=0, compute_linearity=False, compute_scenario_independence=False, weakening_xaxis=True, simple_eqs=True, eqs_x=0.0, fit_intercept=True):
 
     validate_choice('season', season, ALLOWED_SEASONS)
     validate_choice('var', var, ALLOWED_VARS)
@@ -1696,6 +1811,8 @@ def regression_plot(data_dict, lat=None, lon=None, region=None, var='tas', ssp='
     validate_choice('plot_bg', plot_bg, ALLOWED_PLOT_BG)
     if not isinstance(lag, (int, np.integer)):
         raise ValueError(f"lag must be an integer, got {lag!r}")
+    if not fit_intercept and (compute_linearity or compute_scenario_independence):
+        raise ValueError("fit_intercept=False is incompatible with compute_linearity/compute_scenario_independence (diagnostics assume an (n, 2) design matrix)")
 
     # always compare against all-year AMOC strength
     ssp_amoc_yr = data_dict['']['amoc']['ssp']
@@ -1817,7 +1934,7 @@ def regression_plot(data_dict, lat=None, lon=None, region=None, var='tas', ssp='
 
         if not is_ocean:
             # Perform linear regression using statsmodels
-            x_with_const = sm.add_constant(ssp_x)
+            x_with_const = sm.add_constant(ssp_x) if fit_intercept else np.asarray(ssp_x)
             model = sm.OLS(ssp_y, x_with_const).fit(cov_type='cluster', cov_kwds={'groups': ssp_exp_id, 'use_correction': True})
 
             # Manual df correction: use G-1 degrees of freedom for cluster-robust inference
@@ -1840,7 +1957,7 @@ def regression_plot(data_dict, lat=None, lon=None, region=None, var='tas', ssp='
             #           f"{model.params[i_param] + t_crit_ssp*model.bse[i_param]:.4f}]")
 
             x_range = np.linspace(xlim[0], xlim[1], 200)
-            x_range_with_const = sm.add_constant(x_range)
+            x_range_with_const = sm.add_constant(x_range) if fit_intercept else x_range
             y_pred = model.predict(x_range_with_const)
             if regressions and not no_plots:
                 ax.plot(x_range, y_pred,
@@ -1855,9 +1972,9 @@ def regression_plot(data_dict, lat=None, lon=None, region=None, var='tas', ssp='
                                 color=hosing_colors[ssp_i][exp], alpha=0.4, linewidth=0)
 
             # Plot regression equation and coefficients with corrected p-values
-            coef = model.params[1]
-            intercept = model.params[0]
-            p_value = p_values_ssp[1]
+            coef = model.params[1] if fit_intercept else model.params[0]
+            intercept = model.params[0] if fit_intercept else 0.0
+            p_value = p_values_ssp[1] if fit_intercept else p_values_ssp[0]
             if p_value < 0.001:
                 significance = '***'
             elif p_value < 0.01:
@@ -1883,10 +2000,11 @@ def regression_plot(data_dict, lat=None, lon=None, region=None, var='tas', ssp='
             coef_display = f'{coef_for_display:.2f}' if var=='tas' or var=='tmn' else f'{coef_for_display:.3f}' if var=='pr' else f'{coef_for_display}'
             isign = '+' if intercept >= 0 else '-'
             imag = f'{abs(intercept):.2f}' if var=='tas' or var=='tmn' else f'{abs(intercept):.3f}' if var=='pr' else f'{abs(intercept)}'
+            icpt_term = fr" {isign} {imag} $^{{\circ}}$C" if fit_intercept else ""
             if simple_eqs:
-                equation = fr"$\hat{{y}}$ = {coef_display}$^{{{{\text{{{significance}}}}}}}$ {slope_frac} $\cdot$ x {isign} {imag} $^{{\circ}}$C"
+                equation = fr"$\hat{{y}}$ = {coef_display}$^{{{{\text{{{significance}}}}}}}$ {slope_frac} $\cdot$ x" + icpt_term
             else:
-                equation = fr"{var_label} = {coef_display}$^{{{{\text{{{significance}}}}}}}${slope_units} {isign} {imag} $^{{\circ}}$C"
+                equation = fr"{var_label} = {coef_display}$^{{{{\text{{{significance}}}}}}}${slope_units}" + icpt_term
             if regressions and not no_plots:
                 ax.text(eqs_x, equation_y_pos, f"{hosing_names[ssp_i]['ge'][11:]}:",
                         transform=ax.transAxes, fontsize=10, verticalalignment='baseline', color=hosing_colors[ssp_i]['ge'])
@@ -1899,7 +2017,7 @@ def regression_plot(data_dict, lat=None, lon=None, region=None, var='tas', ssp='
         combined_x = np.array(combined_x)
         combined_y = np.array(combined_y)
 
-        combined_x_with_const = sm.add_constant(combined_x)
+        combined_x_with_const = sm.add_constant(combined_x) if fit_intercept else combined_x
         combined_model = sm.OLS(combined_y, combined_x_with_const).fit(cov_type='cluster', cov_kwds={'groups': combined_exp_id, 'use_correction': True})
 
         # Manual df correction for combined model
@@ -1922,7 +2040,7 @@ def regression_plot(data_dict, lat=None, lon=None, region=None, var='tas', ssp='
         #           f"{combined_model.params[i_param] + t_crit_combined*combined_model.bse[i_param]:.4f}]")
 
         combined_x_range = np.linspace(xlim[0], xlim[1], 200)
-        combined_x_range_with_const = sm.add_constant(combined_x_range)
+        combined_x_range_with_const = sm.add_constant(combined_x_range) if fit_intercept else combined_x_range
         combined_y_pred = combined_model.predict(combined_x_range_with_const)
         if (regressions and combined_reg) and not no_plots:
             ax.plot(combined_x_range, combined_y_pred,
@@ -1937,11 +2055,11 @@ def regression_plot(data_dict, lat=None, lon=None, region=None, var='tas', ssp='
                             color='black' if not plot_bg=='black' else 'white', alpha=0.4, linewidth=0)
 
         # Plot combined regression equation and coefficients with corrected p-values
-        combined_coef = combined_model.params[1]
-        combined_intercept = combined_model.params[0]
-        combined_p_value = p_values_combined[1]
-        combined_ste = combined_model.bse[1]
-        combined_rsq = combined_model.rsquared
+        combined_coef = combined_model.params[1] if fit_intercept else combined_model.params[0]
+        combined_intercept = combined_model.params[0] if fit_intercept else 0.0
+        combined_p_value = p_values_combined[1] if fit_intercept else p_values_combined[0]
+        combined_ste = combined_model.bse[1] if fit_intercept else combined_model.bse[0]
+        combined_rsq = combined_model.rsquared  # uncentred R² when fit_intercept=False — not comparable to the free-intercept R²
         if combined_p_value < 0.001:
             combined_significance = '***'
         elif combined_p_value < 0.01:
@@ -1967,10 +2085,11 @@ def regression_plot(data_dict, lat=None, lon=None, region=None, var='tas', ssp='
         combined_coef_display = f'{combined_coef_for_display:.2f}' if var=='tas' or var=='tmn' else f'{combined_coef_for_display:.3f}' if var=='pr' else f'{combined_coef_for_display}'
         isign = '+' if combined_intercept >= 0 else '-'
         imag = f'{abs(combined_intercept):.2f}' if var=='tas' or var=='tmn' else f'{abs(combined_intercept):.3f}' if var=='pr' else f'{abs(combined_intercept)}'
+        icpt_term = fr" {isign} {imag} $^{{\circ}}$C" if fit_intercept else ""
         if simple_eqs:
-            combined_equation = fr"$\hat{{y}}$ = {combined_coef_display}$^{{{{\text{{{combined_significance}}}}}}}$ {slope_frac} $\cdot$ x {isign} {imag} $^{{\circ}}$C"
+            combined_equation = fr"$\hat{{y}}$ = {combined_coef_display}$^{{{{\text{{{combined_significance}}}}}}}$ {slope_frac} $\cdot$ x" + icpt_term
         else:
-            combined_equation = fr"{var_label} = {combined_coef_display}$^{{{{\text{{{combined_significance}}}}}}}${slope_units} {isign} {imag} $^{{\circ}}$C"
+            combined_equation = fr"{var_label} = {combined_coef_display}$^{{{{\text{{{combined_significance}}}}}}}${slope_units}" + icpt_term
         if (regressions and combined_reg) and not no_plots:
             ax.text(eqs_x, equation_y_pos, "All SSPs:",
                     transform=ax.transAxes, fontsize=10, verticalalignment='baseline', color='black' if not plot_bg=='black' else 'white')
@@ -2443,14 +2562,18 @@ def cesm_diagnostics_scan(boot_data, multi_model_dict, masks, var, fields,
     skips). Skips ocean pixels where neither scenario carries finite tas.
     """
     seasons = ['', 'djf', 'jja'] if var == 'tas' else ['']
-    # Boot's season coord is hardcoded to ['']. Skip seasonal slices that
-    # would error out; the figure renders only the available seasons.
+    # Boot carries all three seasons since 2026-08-17; the guard stays so a
+    # reduced boot_data degrades to NaN rather than raising.
     available_seasons = [s for s in seasons
                          if s in list(boot_data.season.values.astype(str))]
     if len(available_seasons) < len(seasons):
         missing = sorted(set(seasons) - set(available_seasons))
         print(f'  CESM diagnostics: skipping seasons {missing} '
               f'(not in boot_data.season); will emit NaN.')
+
+    # One cache read for the whole scan; cesm_regressions would otherwise
+    # re-open reg_ds_cesm.nc for its denominator on every pixel.
+    _scan_amoc_pi = float(get_cesm_reg_ds(recompute=False).AMOC_pi.values)
 
     nlat = boot_data.sizes['lat']
     nlon = boot_data.sizes['lon']
@@ -2484,6 +2607,7 @@ def cesm_diagnostics_scan(boot_data, multi_model_dict, masks, var, fields,
                                      ssp='all', lat=lat_i, lon=lon_i,
                                      region=None, combined_reg=True,
                                      no_plots=True, season=s,
+                                     cesm_amoc_pi_override=_scan_amoc_pi,
                                      **compute_kw)
                 except Exception:
                     i += 1
@@ -3232,11 +3356,17 @@ def load_hosmip_data(apply_ocean_mask=False):
         'IPSL-CM6A-LR': ipsl_masks
     }
 
+    # [amoc_trim, tas_trim] per model: how many trailing steps to drop so the
+    # tas and AMOC legs end on the same year. CESM2's annual tas was 145 steps
+    # against an AMOC of 144 until the upstream file was rewritten on
+    # 2026-08-20, which made it 144; trimming 1 then left tas a year short of
+    # its AMOC partner, so the constant is 0. The seasonal files (172 - 28 =
+    # 144) were unaffected.
     data_cutoffs = {}
     data_cutoffs[''] = {
         'CanESM5': [0, 0],
         'EC-Earth3': [0, 0],
-        'CESM2': [0, 1],
+        'CESM2': [0, 0],
         'MPI-ESM1-2-LR': [0, 0],
         'HadGEM3-GC3-1MM': [0, 1],
         'HadGEM3-GC3-1LL': [45, 0],
@@ -3428,38 +3558,88 @@ def get_other_studies_data(masks):
 
     print('Loading van Westen & Baatsten (2025) data...')
 
-    tas_vwb_600_pi = xr.open_dataset(local_path + 'RenevanWesten-AMOC-TEMP-Extremes-458bcf4/Data/CESM_0600_PI/Atmosphere/TEMP_2m_Europe_month_1-1.nc')
-    amoc_vwb_600_pi = xr.open_dataset(local_path + 'RenevanWesten-AMOC-TEMP-Extremes-458bcf4/Data/CESM_0600_PI/Ocean/AMOC_transport_depth_0-1000m.nc')
-    tas_vwb_1500_pi = xr.open_dataset(local_path + 'RenevanWesten-AMOC-TEMP-Extremes-458bcf4/Data/CESM_1500_PI/Atmosphere/TEMP_2m_Europe_month_1-1.nc')
-    amoc_vwb_1500_pi = xr.open_dataset(local_path + 'RenevanWesten-AMOC-TEMP-Extremes-458bcf4/Data/CESM_1500_PI/Ocean/AMOC_transport_depth_0-1000m.nc')
+    # The vwb marker is a four-corner difference-in-differences, because vwb
+    # have no unhosed control: FH=0.18 Sv is applied even in the 'control'
+    # family as a freshwater bias correction, so each branch's own hosed base
+    # state has to be differenced out. Sources differ by season. ANNUAL is
+    # measured for all four corners: the hydroclimate record (Zenodo 16905376)
+    # ships TEMP_2m alongside its potential-evapotranspiration fields, months
+    # 1-12, on the native grid, over exactly these windows — including
+    # CESM_0600_PI, which no other van Westen record publishes. DJF comes from
+    # the visualisation record (Zenodo 15490235), which has only three corners,
+    # so its CESM_0600_PI is estimated from the measured January base-state
+    # offset scaled by VWB_DPI_R;
+    # vwb_0600_pi_path overrides that estimate if the field is ever published.
+    # The archived per-experiment files are January-only ('month_1-1' in the vwb
+    # repo's own scripts) and now serve only to supply that offset and the mask.
+    # AMOC is measured for all four corners, over each tas file's year span.
+    vwb_root = local_path + 'RenevanWesten-AMOC-TEMP-Extremes-458bcf4/Data/CESM_'
+    tas_vwb_600_pi = xr.open_dataset(vwb_root + '0600_PI/Atmosphere/TEMP_2m_Europe_month_1-1.nc')
+    amoc_vwb_600_pi = xr.open_dataset(vwb_root + '0600_PI/Ocean/AMOC_transport_depth_0-1000m.nc')
+    tas_vwb_1500_pi = xr.open_dataset(vwb_root + '1500_PI/Atmosphere/TEMP_2m_Europe_month_1-1.nc')
+    amoc_vwb_1500_pi = xr.open_dataset(vwb_root + '1500_PI/Ocean/AMOC_transport_depth_0-1000m.nc')
 
-    tas_vwb_600_45 = xr.open_dataset(local_path + 'RenevanWesten-AMOC-TEMP-Extremes-458bcf4/Data/CESM_0600_RCP45/Atmosphere/TEMP_2m_Europe_month_1-1.nc')
-    amoc_vwb_600_45 = xr.open_dataset(local_path + 'RenevanWesten-AMOC-TEMP-Extremes-458bcf4/Data/CESM_0600_RCP45/Ocean/AMOC_transport_depth_0-1000m.nc')
-    tas_vwb_1500_45 = xr.open_dataset(local_path + 'RenevanWesten-AMOC-TEMP-Extremes-458bcf4/Data/CESM_1500_RCP45/Atmosphere/TEMP_2m_Europe_month_1-1.nc')
-    amoc_vwb_1500_45 = xr.open_dataset(local_path + 'RenevanWesten-AMOC-TEMP-Extremes-458bcf4/Data/CESM_1500_RCP45/Ocean/AMOC_transport_depth_0-1000m.nc')
+    tas_vwb_600_45 = xr.open_dataset(vwb_root + '0600_RCP45/Atmosphere/TEMP_2m_Europe_month_1-1.nc')
+    amoc_vwb_600_45 = xr.open_dataset(vwb_root + '0600_RCP45/Ocean/AMOC_transport_depth_0-1000m.nc')
+    tas_vwb_1500_45 = xr.open_dataset(vwb_root + '1500_RCP45/Atmosphere/TEMP_2m_Europe_month_1-1.nc')
+    amoc_vwb_1500_45 = xr.open_dataset(vwb_root + '1500_RCP45/Ocean/AMOC_transport_depth_0-1000m.nc')
 
-    mean_amoc_vwb_600_pi = amoc_vwb_600_pi.Transport.sel(time=slice(1001, 1100)).mean()
-    mean_amoc_vwb_600_45 = amoc_vwb_600_45.Transport.sel(time=slice(2400, 2500)).mean()
-    mean_amoc_vwb_1500_pi = amoc_vwb_1500_pi.Transport.sel(time=slice(1901, 2000)).mean()
-    mean_amoc_vwb_1500_45 = amoc_vwb_1500_45.Transport.sel(time=slice(2400, 2500)).mean()
+    mean_amoc_vwb_600_pi = amoc_vwb_600_pi.Transport.sel(time=slice(1000, 1099)).mean()
+    mean_amoc_vwb_600_45 = amoc_vwb_600_45.Transport.sel(time=slice(2400, 2499)).mean()
+    mean_amoc_vwb_1500_pi = amoc_vwb_1500_pi.Transport.sel(time=slice(1900, 1999)).mean()
+    mean_amoc_vwb_1500_45 = amoc_vwb_1500_45.Transport.sel(time=slice(2400, 2499)).mean()
 
     vwb_mask = make_country_masks_land_aware(tas_vwb_600_45.mean(dim='time').TEMP_2m)
 
-    tas_600_pi = tas_vwb_600_pi.TEMP_2m.mean(dim='time').where(vwb_mask['EU_buffer'], drop=True)
-    tas_600_45 = tas_vwb_600_45.TEMP_2m.mean(dim='time').where(vwb_mask['EU_buffer'], drop=True)
-    tas_1500_pi = tas_vwb_1500_pi.TEMP_2m.mean(dim='time').where(vwb_mask['EU_buffer'], drop=True)
-    tas_1500_45 = tas_vwb_1500_45.TEMP_2m.mean(dim='time').where(vwb_mask['EU_buffer'], drop=True)
+    # measured January base-state offset T(1500_PI) - T(0600_PI): the one
+    # quantity the visualisation record cannot supply
+    vwb_dpi_jan = tas_vwb_1500_pi.TEMP_2m.mean(dim='time') - tas_vwb_600_pi.TEMP_2m.mean(dim='time')
 
-    tas_600_pi = tas_600_pi.assign_coords(scenar='pi', type='control')
-    tas_600_45 = tas_600_45.assign_coords(scenar='ghg', type='control')
-    tas_1500_pi = tas_1500_pi.assign_coords(scenar='pi', type='hosing')
-    tas_1500_45 = tas_1500_45.assign_coords(scenar='ghg', type='hosing')
+    # annual: measured corners, native grid, K -> degC. The hydroclimate box is
+    # a subset of the archive Europe grid, so reindex pads the unused western
+    # buffer with NaN; every EU/NEU/WCE/MED land cell lies inside it.
+    vwb_hc = {exp: (xr.open_dataset(vwb_hc_path + f'CESM_{exp}_PREC_POT_EVAP_fields_month_1-12.nc'
+                        ).TEMP_2m.sel(time=slice(*win)).mean('time') - 273.15
+                    ).reindex(lat=tas_vwb_600_45.lat, lon=tas_vwb_600_45.lon,
+                              method='nearest', tolerance=1e-6)
+              for exp, win in VWB_HC_WINDOWS.items()}
 
-    tas_control = xr.concat([tas_600_pi, tas_600_45], dim='scenar')
-    tas_hosing = xr.concat([tas_1500_pi, tas_1500_45], dim='scenar')
-    vwb_data_tas = xr.concat([tas_control, tas_hosing], dim='type')
-    vwb_data_tas = vwb_data_tas.transpose('lat', 'lon', 'scenar', 'type')
-    vwb_data = vwb_data_tas.to_dataset(name='tas')
+    # DJF: visualisation fields interpolated down to the archive's native 2-deg
+    # grid (they were interpolated up from it), so the cached masks stay valid
+    vwb_viz = {k: xr.open_dataset(vwb_viz_path + f)[list(VWB_SEASONS.values())].interp(
+                    lat=tas_vwb_600_45.lat, lon=tas_vwb_600_45.lon)
+               for k, f in [('1500_pi', 'PI_historical_without_AMOC_collapse.nc'),
+                            ('600_45', 'Climate_change_RCP45_without_AMOC_collapse.nc'),
+                            ('1500_45', 'Climate_change_RCP45_with_AMOC_collapse.nc')]}
+    vwb_600_pi_real = (xr.open_dataset(vwb_0600_pi_path).interp(
+                            lat=tas_vwb_600_45.lat, lon=tas_vwb_600_45.lon)
+                       if vwb_0600_pi_path is not None else None)
+
+    def assemble_vwb_corners(t_600_pi, t_600_45, t_1500_pi, t_1500_45):
+        c = [t.where(vwb_mask['EU_buffer'], drop=True).assign_coords(scenar=sc, type=ty)
+             for t, sc, ty in [(t_600_pi, 'pi', 'control'), (t_600_45, 'ghg', 'control'),
+                               (t_1500_pi, 'pi', 'hosing'), (t_1500_45, 'ghg', 'hosing')]]
+        return xr.concat([xr.concat(c[:2], dim='scenar'), xr.concat(c[2:], dim='scenar')],
+                         dim='type').transpose('lat', 'lon', 'scenar', 'type')
+
+    # 'tas' uses the central factor; 'tas_lo'/'tas_hi' differ only at an
+    # estimated (control, pi) corner and carry the bracket to the plotter. All
+    # three coincide for annual, where that corner is measured, which is what
+    # makes the plotter drop the error bar and fill the marker.
+    vwb_data = xr.Dataset()
+    for name, i in [('tas', 0), ('tas_lo', 1), ('tas_hi', 2)]:
+        per_season = []
+        for season_i, var_i in VWB_SEASONS.items():
+            if season_i == '':
+                corners = [vwb_hc[e] for e in ['0600_PI', '0600_RCP45', '1500_PI', '1500_RCP45']]
+            else:
+                t_600_pi = (vwb_600_pi_real[var_i] if vwb_600_pi_real is not None else
+                            vwb_viz['1500_pi'][var_i] - VWB_DPI_R[season_i][i] * vwb_dpi_jan)
+                corners = [t_600_pi, vwb_viz['600_45'][var_i],
+                           vwb_viz['1500_pi'][var_i], vwb_viz['1500_45'][var_i]]
+            per_season.append(assemble_vwb_corners(*corners).assign_coords(season=season_i))
+        vwb_data[name] = xr.concat(per_season, dim='season').transpose(
+                            'lat', 'lon', 'season', 'scenar', 'type')
 
     amoc_600_pi = mean_amoc_vwb_600_pi.assign_coords(scenar='pi', type='control')
     amoc_600_45 = mean_amoc_vwb_600_45.assign_coords(scenar='ghg', type='control')
@@ -3469,11 +3649,9 @@ def get_other_studies_data(masks):
     amoc_control = xr.concat([amoc_600_pi, amoc_600_45], dim='scenar')
     amoc_hosing = xr.concat([amoc_1500_pi, amoc_1500_45], dim='scenar')
     vwb_data_amoc = xr.concat([amoc_control, amoc_hosing], dim='type')
-    vwb_data_amoc = vwb_data_amoc.transpose('scenar', 'type')
-    vwb_data['amoc'] = vwb_data_amoc
-
-    vwb_data = vwb_data.assign_coords(season='')
-    vwb_data = vwb_data.expand_dims('season', axis=-3)
+    # AMOC@26N is annual only, so the same value serves every season slot
+    vwb_data['amoc'] = vwb_data_amoc.expand_dims(season=list(VWB_SEASONS)).transpose(
+                            'season', 'scenar', 'type')
 
     vwb_masks_ds = xr.concat([vwb_mask[k] for k in vwb_mask.keys()],
                     dim=pd.Index(list(vwb_mask.keys()), name='region'))
@@ -3489,8 +3667,14 @@ def get_other_studies_data(masks):
     boot_data_dict = {}
 
     for i, exp in enumerate(boot_exps):
-        # AMOC strength data (MOC)
-        amoc = xr.open_dataset(f"/work/uo1075/m300817/teu_amoc/data/CESM2_hosing/{exp}/{exp}_amoc26_yr.nc", use_cftime=True)
+        # AMOC strength data (MOC). The tas side already lives on bu1431; the
+        # AMOC side was the last external-study input readable only from
+        # another user's account, so a mirror was staged 2026-08-17 and is
+        # used when the uo1075 original is gone.
+        _amoc_p = f"/work/uo1075/m300817/teu_amoc/data/CESM2_hosing/{exp}/{exp}_amoc26_yr.nc"
+        if not os.path.isfile(_amoc_p):
+            _amoc_p = boot_bu1431_path + f'{exp}_amoc26_yr.nc'
+        amoc = xr.open_dataset(_amoc_p, use_cftime=True)
 
         ctrl_or_hos = 'control' if exp[:3] == 'CTL' else 'hosing_05'
         amoc = amoc.assign_coords(scenar=f'ssp{exp[4:]}', type=ctrl_or_hos if ctrl_or_hos=='control' else 'hosing')
@@ -3505,18 +3689,26 @@ def get_other_studies_data(masks):
         tas = tas.where(masks['CESM2']['EU_buffer'], drop=True)
 
         tas = tas.assign_coords(scenar=f'ssp{exp[4:]}', type=ctrl_or_hos if ctrl_or_hos=='control' else 'hosing')
-        
-        boot_data_dict[exp+'_tas'] = tas.resample(time='1YS').mean(dim='time').isel(time=slice(1, None))
 
-    boot_tas_control = xr.concat([boot_data_dict['CTL_126_tas'], boot_data_dict['CTL_585_tas']], dim='scenar')
-    boot_tas_hosing = xr.concat([boot_data_dict['HOS_126_tas'], boot_data_dict['HOS_585_tas']], dim='scenar')
-    boot_tas = xr.concat([boot_tas_control, boot_tas_hosing], dim='type')
-    boot_tas = boot_tas.transpose('lat', 'lon', 'time', 'scenar', 'type')
+        # Annual first: it defines the 2016-2100 axis (and its cftime type)
+        # that every seasonal leg is then forced onto, so the season concat
+        # below aligns exactly instead of unioning two calendars.
+        tas_ann = tas.resample(time='1YS').mean(dim='time').isel(time=slice(1, None))
+        boot_data_dict[exp+'_tas_'] = tas_ann
+        for season_i in BOOT_SEASONS[1:]:
+            seas = seasonalize(tas, season_i).sel(time=slice(*BOOT_WINDOW))
+            if seas.sizes['time'] != tas_ann.sizes['time']:
+                raise ValueError(
+                    f"Boot {exp} {season_i}: {seas.sizes['time']} seasonal steps "
+                    f"vs {tas_ann.sizes['time']} annual over {BOOT_WINDOW}.")
+            boot_data_dict[f'{exp}_tas_{season_i}'] = seas.assign_coords(time=tas_ann.time)
 
-    boot_tas = boot_tas.assign_coords(season='')
-    boot_tas = boot_tas.expand_dims('season', axis=-3)
+    boot_tas = xr.concat([
+        xr.concat([
+            xr.concat([boot_data_dict[f'CTL_126_tas_{s}'], boot_data_dict[f'CTL_585_tas_{s}']], dim='scenar'),
+            xr.concat([boot_data_dict[f'HOS_126_tas_{s}'], boot_data_dict[f'HOS_585_tas_{s}']], dim='scenar'),
+        ], dim='type').assign_coords(season=s) for s in BOOT_SEASONS], dim='season')
     boot_tas = boot_tas.transpose('lat', 'lon', 'time', 'season', 'scenar', 'type')
-    # boot_tas = boot_tas
     boot_data = boot_tas.to_dataset(name='tas')
 
     boot_amoc_control = xr.concat([boot_data_dict['CTL_126_amoc'], boot_data_dict['CTL_585_amoc']], dim='scenar')
@@ -3524,8 +3716,8 @@ def get_other_studies_data(masks):
     boot_amoc = xr.concat([boot_amoc_control, boot_amoc_hosing], dim='type')
     boot_amoc = boot_amoc.transpose('time', 'scenar', 'type')
 
-    boot_amoc = boot_amoc.assign_coords(season='')
-    boot_amoc = boot_amoc.expand_dims('season', axis=-3)
+    # AMOC26 is annual only, so the same value serves every season slot
+    boot_amoc = boot_amoc.expand_dims(season=BOOT_SEASONS)
     boot_amoc = boot_amoc.transpose('time', 'season', 'scenar', 'type')
     boot_data['amoc'] = boot_amoc
 
@@ -3671,6 +3863,10 @@ def get_cmip_projections(masks, data_dict=None, extra_ssps=None):
         if not realiz_ids[model]['his']:
             realiz_ids[model]['missing'].append('his')
 
+    # uo1075 is read-only, so seasonal SSP members filled after 2026-08-17 land
+    # here instead, beside an already-present (but incomplete) uo1075 dir.
+    _BU1431_SSP_ROOT = '/work/bu1431/T_EU_AMOC/CMIP6/'
+
     # Load SSP scenarios first (they share time coordinates 2015-2100)
     for model in model_names:
         for ssp_i in local_ssps:
@@ -3726,11 +3922,17 @@ def get_cmip_projections(masks, data_dict=None, extra_ssps=None):
                     # raw data is staged before the seasonal split is rerun
                     # (e.g. CESM2 ssp126 r4/r11 added 2026-05-24 without
                     # corresponding tas_djf / tas_jja files).
-                    _seasonal_realiz = [
-                        r for r in realiz_ids[model][ssp_i]
-                        if os.path.isfile(
-                            data_path + f'tas_{season}/{model_lower}_r{r}i1{physics}{f_number}_tas_{season}.nc')
-                    ]
+                    # The lookup is per-file across both roots, not per-dir:
+                    # uo1075 is read-only so members filled since 2026-08-17
+                    # land on bu1431 beside an already-present uo1075 dir.
+                    def _seasonal_path(r):
+                        name = f'tas_{season}/{model_lower}_r{r}i1{physics}{f_number}_tas_{season}.nc'
+                        for root in (data_path, f'{_BU1431_SSP_ROOT}{ssp_i}/{model_lower}/'):
+                            if os.path.isfile(root + name):
+                                return root + name
+                        return None
+                    _seasonal_paths = {r: _seasonal_path(r) for r in realiz_ids[model][ssp_i]}
+                    _seasonal_realiz = [r for r, p in _seasonal_paths.items() if p is not None]
                     _missing_seasonal = sorted(set(realiz_ids[model][ssp_i]) - set(_seasonal_realiz))
                     if _missing_seasonal:
                         print(f"  ({model} {ssp_i} {season}: seasonal files "
@@ -3739,7 +3941,7 @@ def get_cmip_projections(masks, data_dict=None, extra_ssps=None):
                     if not _seasonal_realiz:
                         continue
                     new_cmip_tas_data = xr.concat([
-                        (cmip6_inventory.open_canonical(data_path+f'tas_{season}/{model_lower}_r{r}i1{physics}{f_number}_tas_{season}.nc', model, as_dataset=True) - 273.15).assign_coords(scenar=ssp_i, season=season) for r in _seasonal_realiz
+                        (cmip6_inventory.open_canonical(_seasonal_paths[r], model, as_dataset=True) - 273.15).assign_coords(scenar=ssp_i, season=season) for r in _seasonal_realiz
                     ], dim='realiz')
                     if 'dim' in drop_stuff[model].keys():
                         new_cmip_tas_data = new_cmip_tas_data.drop_dims(drop_stuff[model]['dim'])
@@ -3826,31 +4028,32 @@ def get_cmip_projections(masks, data_dict=None, extra_ssps=None):
         # Time coords reuse the annual historical axis so concat works.
         his_seasonal_tas_dict = {}
         # Seasonal historical tas for HosMIP-7 + GISS is written to bu1431
-        # by scripts/process_seasonal_tas.py (uo1075 is read-only). Look
-        # there as a fallback when the canonical uo1075 mirror is absent.
+        # by scripts/processing/process_seasonal_tas.py (uo1075 is read-only).
+        # The lookup is per-file across both roots, not per-dir: a model can
+        # have most members on uo1075 and the rest on bu1431, and a dir-level
+        # preference would then hide the bu1431 ones (mirrors the SSP
+        # seasonal block above).
         _BU1431_HIST_ROOT = '/work/bu1431/T_EU_AMOC/CMIP6/historical/'
         for _season in ('djf', 'jja'):
-            _seas_dir = data_path + f'tas_{_season}/'
-            if not os.path.isdir(_seas_dir):
-                _bu_seas_dir = f'{_BU1431_HIST_ROOT}{model_lower}/tas_{_season}/'
-                if os.path.isdir(_bu_seas_dir):
-                    _seas_dir = _bu_seas_dir
-                else:
-                    print(f"  ({model} his {_season}: dir absent on uo1075+bu1431 — leaving NaN)")
-                    continue
-            _seas_realiz = [
-                r for r in realiz_ids[model]['his']
-                if os.path.isfile(_seas_dir + f'{model_lower}_r{r}i1p{physics_num}f{f_num}_tas_{_season}.nc')
-            ]
+            def _his_seasonal_path(r):
+                name = (f'tas_{_season}/{model_lower}_'
+                        f'r{r}i1p{physics_num}f{f_num}_tas_{_season}.nc')
+                for root in (data_path, f'{_BU1431_HIST_ROOT}{model_lower}/'):
+                    if os.path.isfile(root + name):
+                        return root + name
+                return None
+            _seas_paths = {r: _his_seasonal_path(r) for r in realiz_ids[model]['his']}
+            _seas_realiz = [r for r, p in _seas_paths.items() if p is not None]
             _missing = sorted(set(realiz_ids[model]['his']) - set(_seas_realiz))
             if _missing:
                 print(f"  ({model} his {_season}: per-realisation files missing "
                       f"for r{_missing}; loading "
                       f"{len(_seas_realiz)}/{len(realiz_ids[model]['his'])} members)")
             if not _seas_realiz:
+                print(f"  ({model} his {_season}: no files on uo1075+bu1431 — leaving NaN)")
                 continue
             _seas_data = xr.concat([
-                (cmip6_inventory.open_canonical(_seas_dir + f'{model_lower}_r{r}i1p{physics_num}f{f_num}_tas_{_season}.nc', model, as_dataset=True) - 273.15).assign_coords(scenar='his', season=_season)
+                (cmip6_inventory.open_canonical(_seas_paths[r], model, as_dataset=True) - 273.15).assign_coords(scenar='his', season=_season)
                 for r in _seas_realiz
             ], dim='realiz')
             # Apply the same per-model attribute scrubbing that the SSP
@@ -3874,9 +4077,29 @@ def get_cmip_projections(masks, data_dict=None, extra_ssps=None):
             _seas_data.coords['lon'] = (_seas_data.coords['lon'] + 180) % 360 - 180
             _seas_data = _seas_data.sortby(_seas_data.lon)
             _seas_data = _seas_data.where(masks[model]['EU_buffer'], drop=True)
-            # Calendar align (mirror annual branch above).
-            if model in ['CESM2', 'CanESM5', 'HadGEM3-GC3-1LL', 'HadGEM3-GC3-1MM', 'GISS-E2-1-G']:
-                _seas_data = _seas_data.assign_coords(time=mpi_hr_his_time)
+            # Stamp the seasonal leg onto the annual historical axis. Both are
+            # one value per year over 1850-2014, so this is a no-op for a
+            # correctly written file; it subsumes the calendar alignment the
+            # annual branch does for CESM2/CanESM5/HadGEM3/GISS, and it absorbs
+            # a wrong origin in the file itself — the uo1075 historical
+            # seasonal files re-derived upstream on 2026-08-20 are stamped
+            # 2015-2179 (values verified identical to the 1850-2014 versions
+            # they replaced, so the defect is in the label only). The length
+            # check is what keeps this from silently papering over a genuine
+            # misalignment. Sibling of cmip6_inventory.open_seasonal_tas,
+            # which does the same for the CMIP-target reader; this one is
+            # stricter, re-stamping onto an annual axis it already holds.
+            _his_time = new_cmip_tas_data.time.values
+            if _seas_data.sizes['time'] != len(_his_time):
+                raise ValueError(
+                    f'{model} his {_season}: seasonal leg has '
+                    f'{_seas_data.sizes["time"]} steps, annual has '
+                    f'{len(_his_time)} — refusing to re-stamp')
+            if _seas_data.time.values[0].year != _his_time[0].year:
+                print(f"  ({model} his {_season}: file time origin "
+                      f"{_seas_data.time.values[0].year} != annual "
+                      f"{_his_time[0].year}; re-stamping onto the annual axis)")
+            _seas_data = _seas_data.assign_coords(time=_his_time)
             _his_seas_tas = _seas_data.tas.mean(dim='realiz').expand_dims('scenar').assign_coords(scenar=['his'])
             his_seasonal_tas_dict[_season] = _his_seas_tas
 
@@ -4383,28 +4606,30 @@ def get_cesm_reg_ds(recompute=False, data_dict=None, multi_model_dict=None, mask
         print('############################################################')
         print('Calculating CESM2 regression coefficients...')
         print('############################################################')
-        static_reg_ds = multi_model_dict['CESM2'].isel(time=0, drop=True).copy(deep=True).drop_vars(['tas', 'amoc', 'mask', 'region', 'type', 'season'])
+        # 'season' is kept (dropped before 2026-08-17), giving the same
+        # (lat, lon, season, scenar) layout the HosMIP reg_ds already uses.
+        static_reg_ds = multi_model_dict['CESM2'].isel(time=0, drop=True).copy(deep=True).drop_vars(['tas', 'amoc', 'mask', 'region', 'type'])
         static_reg_ds = static_reg_ds.assign_coords(scenar=ssps+['ssp585'])
 
         reg_ds_cesm = static_reg_ds.assign(
-            coef_ensmean=(['lat', 'lon'], np.full(tuple(static_reg_ds.isel(scenar=0).sizes.values()), np.nan)),
-            ste_ensmean=(['lat', 'lon'], np.full(tuple(static_reg_ds.isel(scenar=0).sizes.values()), np.nan)), # standard error of regression coefficient
-            rsq_ensmean=(['lat', 'lon'], np.full(tuple(static_reg_ds.isel(scenar=0).sizes.values()), np.nan)), # R^2 of regression
-            coef_ensmean_intercept=(['lat', 'lon'], np.full(tuple(static_reg_ds.isel(scenar=0).sizes.values()), np.nan)),
-            ste_ensmean_intercept=(['lat', 'lon'], np.full(tuple(static_reg_ds.isel(scenar=0).sizes.values()), np.nan)), # standard error of regression coefficient
-            rsq_ensmean_intercept=(['lat', 'lon'], np.full(tuple(static_reg_ds.isel(scenar=0).sizes.values()), np.nan)), # R^2 of regression
-            coef_ssp=(['lat', 'lon', 'scenar'], np.full(tuple(static_reg_ds.sizes.values()), np.nan)),
-            ste_ssp=(['lat', 'lon', 'scenar'], np.full(tuple(static_reg_ds.sizes.values()), np.nan)),  # standard error for SSP-specific regressions
-            rsq_ssp=(['lat', 'lon', 'scenar'], np.full(tuple(static_reg_ds.sizes.values()), np.nan)),  # R^2 for SSP-specific regressions
-            AMOC_future=(['scenar'], np.full(tuple(static_reg_ds.isel(lat=0, lon=0).sizes.values()), np.nan)),
-            AMOC_pi=([], np.full(tuple(static_reg_ds.isel(lat=0, lon=0, scenar=0).sizes.values()), np.nan)),
-            T_future=(['lat', 'lon', 'scenar'], np.full(tuple(static_reg_ds.sizes.values()), np.nan)),
-            T_pi=(['lat', 'lon'], np.full(tuple(static_reg_ds.isel(scenar=0).sizes.values()), np.nan)),
-            T_pd_245=(['lat', 'lon'], np.full(tuple(static_reg_ds.isel(scenar=0).sizes.values()), np.nan)),
-            req_strength_pi=(['lat', 'lon', 'scenar'], np.full(tuple(static_reg_ds.sizes.values()), np.nan)),
-            req_strength_pd=(['lat', 'lon', 'scenar'], np.full(tuple(static_reg_ds.sizes.values()), np.nan)),
-            req_weakening_pi=(['lat', 'lon', 'scenar'], np.full(tuple(static_reg_ds.sizes.values()), np.nan)),
-            req_weakening_pd=(['lat', 'lon', 'scenar'], np.full(tuple(static_reg_ds.sizes.values()), np.nan)),
+            coef_ensmean=(['lat', 'lon', 'season'], np.full(tuple(static_reg_ds.isel(scenar=0).sizes.values()), np.nan)),
+            ste_ensmean=(['lat', 'lon', 'season'], np.full(tuple(static_reg_ds.isel(scenar=0).sizes.values()), np.nan)), # standard error of regression coefficient
+            rsq_ensmean=(['lat', 'lon', 'season'], np.full(tuple(static_reg_ds.isel(scenar=0).sizes.values()), np.nan)), # R^2 of regression
+            coef_ensmean_intercept=(['lat', 'lon', 'season'], np.full(tuple(static_reg_ds.isel(scenar=0).sizes.values()), np.nan)),
+            ste_ensmean_intercept=(['lat', 'lon', 'season'], np.full(tuple(static_reg_ds.isel(scenar=0).sizes.values()), np.nan)), # standard error of regression coefficient
+            rsq_ensmean_intercept=(['lat', 'lon', 'season'], np.full(tuple(static_reg_ds.isel(scenar=0).sizes.values()), np.nan)), # R^2 of regression
+            coef_ssp=(['lat', 'lon', 'season', 'scenar'], np.full(tuple(static_reg_ds.sizes.values()), np.nan)),
+            ste_ssp=(['lat', 'lon', 'season', 'scenar'], np.full(tuple(static_reg_ds.sizes.values()), np.nan)),  # standard error for SSP-specific regressions
+            rsq_ssp=(['lat', 'lon', 'season', 'scenar'], np.full(tuple(static_reg_ds.sizes.values()), np.nan)),  # R^2 for SSP-specific regressions
+            AMOC_future=(['scenar'], np.full(tuple(static_reg_ds.isel(lat=0, lon=0, season=0).sizes.values()), np.nan)),
+            AMOC_pi=([], np.full(tuple(static_reg_ds.isel(lat=0, lon=0, scenar=0, season=0).sizes.values()), np.nan)),
+            T_future=(['lat', 'lon', 'season', 'scenar'], np.full(tuple(static_reg_ds.sizes.values()), np.nan)),
+            T_pi=(['lat', 'lon', 'season'], np.full(tuple(static_reg_ds.isel(scenar=0).sizes.values()), np.nan)),
+            T_pd_245=(['lat', 'lon', 'season'], np.full(tuple(static_reg_ds.isel(scenar=0).sizes.values()), np.nan)),
+            req_strength_pi=(['lat', 'lon', 'season', 'scenar'], np.full(tuple(static_reg_ds.sizes.values()), np.nan)),
+            req_strength_pd=(['lat', 'lon', 'season', 'scenar'], np.full(tuple(static_reg_ds.sizes.values()), np.nan)),
+            req_weakening_pi=(['lat', 'lon', 'season', 'scenar'], np.full(tuple(static_reg_ds.sizes.values()), np.nan)),
+            req_weakening_pd=(['lat', 'lon', 'season', 'scenar'], np.full(tuple(static_reg_ds.sizes.values()), np.nan)),
         )
 
         # Set the harmonised 1850–1899 CMIP6 historical baselines BEFORE the
@@ -4417,48 +4642,56 @@ def get_cesm_reg_ds(recompute=False, data_dict=None, multi_model_dict=None, mask
         # T_pi shares lat/lon with the cache by construction (see HosMIP
         # loader comment). Direct .values assignment after a positional
         # transpose-free fetch.
-        reg_ds_cesm.T_pi.values[:, :] = get_hist_pi_baseline(
-            'CESM2', 'tas', cmip6_ctrl_data=cmip6_ctrl_data,
-            multi_model_dict=multi_model_dict, season='').values
+        for _season in reg_ds_cesm.season.values:
+            reg_ds_cesm.T_pi.loc[:, :, _season] = get_hist_pi_baseline(
+                'CESM2', 'tas', cmip6_ctrl_data=cmip6_ctrl_data,
+                multi_model_dict=multi_model_dict, season=str(_season)).values
         _cesm_amoc_pi_for_regression = float(reg_ds_cesm.AMOC_pi.values)
 
+        # AMOC26 is annual, so a seasonal slope pairs seasonal ΔT with the
+        # same annual ΔAMOC — the convention HosMIP and GISS already use.
         i=0
-        for lat in np.arange(len(static_reg_ds.lat)):
-            for lon in np.arange(len(static_reg_ds.lon)):
-                reg_quadruples = cesm_regressions(boot_data, multi_model_dict, masks, ssp='all', lat=lat, lon=lon, region=None, combined_reg=True, no_plots=True, add_combined_intercept=False, cesm_amoc_pi_override=_cesm_amoc_pi_for_regression)
-                reg_quadruples_intercept = cesm_regressions(boot_data, multi_model_dict, masks, ssp='all', lat=lat, lon=lon, region=None, combined_reg=True, no_plots=True, add_combined_intercept=True, cesm_amoc_pi_override=_cesm_amoc_pi_for_regression)
-                reg_ds_cesm.coef_ensmean.values[lat, lon] = reg_quadruples['combined'][1]
-                reg_ds_cesm.ste_ensmean.values[lat, lon] = reg_quadruples['combined'][2]
-                reg_ds_cesm.rsq_ensmean.values[lat, lon] = reg_quadruples['combined'][3]
-                reg_ds_cesm.coef_ensmean_intercept.values[lat, lon] = reg_quadruples_intercept['combined'][1]
-                reg_ds_cesm.ste_ensmean_intercept.values[lat, lon] = reg_quadruples_intercept['combined'][2]
-                reg_ds_cesm.rsq_ensmean_intercept.values[lat, lon] = reg_quadruples_intercept['combined'][3]
-                # SSP-specific: tuple is (coef, ste, rsq)
-                reg_ds_cesm.coef_ssp.values[lat, lon, 0] = reg_quadruples['ssp126'][0]
-                reg_ds_cesm.ste_ssp.values[lat, lon, 0] = reg_quadruples['ssp126'][1]
-                reg_ds_cesm.rsq_ssp.values[lat, lon, 0] = reg_quadruples['ssp126'][2]
-                reg_ds_cesm.coef_ssp.values[lat, lon, 3] = reg_quadruples['ssp585'][0]
-                reg_ds_cesm.ste_ssp.values[lat, lon, 3] = reg_quadruples['ssp585'][1]
-                reg_ds_cesm.rsq_ssp.values[lat, lon, 3] = reg_quadruples['ssp585'][2]
-                i += 1
+        _n = len(static_reg_ds.lat)*len(static_reg_ds.lon)*len(reg_ds_cesm.season)
+        for si, _season in enumerate(reg_ds_cesm.season.values):
+            _s = str(_season)
+            for lat in np.arange(len(static_reg_ds.lat)):
+                for lon in np.arange(len(static_reg_ds.lon)):
+                    reg_quadruples = cesm_regressions(boot_data, multi_model_dict, masks, ssp='all', lat=lat, lon=lon, region=None, combined_reg=True, no_plots=True, add_combined_intercept=False, cesm_amoc_pi_override=_cesm_amoc_pi_for_regression, season=_s)
+                    reg_quadruples_intercept = cesm_regressions(boot_data, multi_model_dict, masks, ssp='all', lat=lat, lon=lon, region=None, combined_reg=True, no_plots=True, add_combined_intercept=True, cesm_amoc_pi_override=_cesm_amoc_pi_for_regression, season=_s)
+                    reg_ds_cesm.coef_ensmean.values[lat, lon, si] = reg_quadruples['combined'][1]
+                    reg_ds_cesm.ste_ensmean.values[lat, lon, si] = reg_quadruples['combined'][2]
+                    reg_ds_cesm.rsq_ensmean.values[lat, lon, si] = reg_quadruples['combined'][3]
+                    reg_ds_cesm.coef_ensmean_intercept.values[lat, lon, si] = reg_quadruples_intercept['combined'][1]
+                    reg_ds_cesm.ste_ensmean_intercept.values[lat, lon, si] = reg_quadruples_intercept['combined'][2]
+                    reg_ds_cesm.rsq_ensmean_intercept.values[lat, lon, si] = reg_quadruples_intercept['combined'][3]
+                    # SSP-specific: tuple is (coef, ste, rsq)
+                    for _si, _ssp in [(0, 'ssp126'), (3, 'ssp585')]:
+                        reg_ds_cesm.coef_ssp.values[lat, lon, si, _si] = reg_quadruples[_ssp][0]
+                        reg_ds_cesm.ste_ssp.values[lat, lon, si, _si] = reg_quadruples[_ssp][1]
+                        reg_ds_cesm.rsq_ssp.values[lat, lon, si, _si] = reg_quadruples[_ssp][2]
+                    i += 1
 
-                if i % 100 == 0:
-                    print(f"{i}/{len(static_reg_ds.lat)*len(static_reg_ds.lon)} regression coefficients calculated.")
+                    if i % 100 == 0:
+                        print(f"{i}/{_n} regression coefficients calculated.")
 
         # AMOC_pi and T_pi were set before the regression loop (above) so the
         # cached slopes are intrinsically consistent with reg_ds_cesm.AMOC_pi.
-        # reg_ds_cesm.T_pd_245.loc[:, :] = xr.concat([.sel(time=slice('2000', '2014')),
-        #                                             cmip6_ctrl_data['CESM2']['tas'].sel(scenar='ssp245', season='').sel(time=slice('2015', '2029'))], dim='time').mean(dim='time').values
-        reg_ds_cesm.T_pd_245.loc[:, :] = xr.concat([cmip6_ctrl_data['CESM2']['tas'].sel(scenar='his', season='').sel(time=slice(*PD_HIS_WINDOW)), cmip6_ctrl_data['CESM2']['tas'].sel(scenar='ssp245', season='').sel(time=slice(*PD_SSP_WINDOW))], dim='time').mean(dim='time').values
+        for _season in reg_ds_cesm.season.values:
+            _s = str(_season)
+            reg_ds_cesm.T_pd_245.loc[:, :, _season] = xr.concat([cmip6_ctrl_data['CESM2']['tas'].sel(scenar='his', season=_s).sel(time=slice(*PD_HIS_WINDOW)), cmip6_ctrl_data['CESM2']['tas'].sel(scenar='ssp245', season=_s).sel(time=slice(*PD_SSP_WINDOW))], dim='time').mean(dim='time').values
 
         for ssp_i in ssps:
             reg_ds_cesm.AMOC_future.loc[ssp_i] = cmip6_ctrl_data['CESM2']['amoc'].sel(scenar=ssp_i).sel(time=slice(*fw)).mean(dim='time').values
-            reg_ds_cesm.T_future.loc[:, :, ssp_i] = cmip6_ctrl_data['CESM2']['tas'].sel(scenar=ssp_i, season='').sel(time=slice(*fw)).mean(dim='time').values
+            for _season in reg_ds_cesm.season.values:
+                reg_ds_cesm.T_future.loc[:, :, _season, ssp_i] = cmip6_ctrl_data['CESM2']['tas'].sel(scenar=ssp_i, season=str(_season)).sel(time=slice(*fw)).mean(dim='time').values
 
-            reg_ds_cesm.req_strength_pi.loc[:, :, ssp_i] = reg_ds_cesm.AMOC_future.loc[ssp_i] - (reg_ds_cesm.T_future.loc[:, :, ssp_i] - reg_ds_cesm.T_pi) / (reg_ds_cesm.coef_ensmean*(-100)/reg_ds_cesm.AMOC_pi)
-            reg_ds_cesm.req_strength_pd.loc[:, :, ssp_i] = reg_ds_cesm.AMOC_future.loc[ssp_i] - (reg_ds_cesm.T_future.loc[:, :, ssp_i] - reg_ds_cesm.T_pd_245) / (reg_ds_cesm.coef_ensmean*(-100)/reg_ds_cesm.AMOC_pi)
-            reg_ds_cesm.req_weakening_pi.loc[:, :, ssp_i] = (reg_ds_cesm.AMOC_pi - reg_ds_cesm.req_strength_pi.loc[:, :, ssp_i]) / reg_ds_cesm.AMOC_pi * 100
-            reg_ds_cesm.req_weakening_pd.loc[:, :, ssp_i] = (reg_ds_cesm.AMOC_pi - reg_ds_cesm.req_strength_pd.loc[:, :, ssp_i]) / reg_ds_cesm.AMOC_pi * 100
+            # Cooling-sign filter (coef K/% < 0): NaN where the per-pixel
+            # inversion is undefined — symmetric with HosMIP/MPI/GISS.
+            _coef_cool_c = reg_ds_cesm.coef_ensmean.where(reg_ds_cesm.coef_ensmean < 0)
+            reg_ds_cesm.req_strength_pi.loc[:, :, :, ssp_i] = reg_ds_cesm.AMOC_future.loc[ssp_i] - (reg_ds_cesm.T_future.loc[:, :, :, ssp_i] - reg_ds_cesm.T_pi) / (_coef_cool_c*(-100)/reg_ds_cesm.AMOC_pi)
+            reg_ds_cesm.req_strength_pd.loc[:, :, :, ssp_i] = reg_ds_cesm.AMOC_future.loc[ssp_i] - (reg_ds_cesm.T_future.loc[:, :, :, ssp_i] - reg_ds_cesm.T_pd_245) / (_coef_cool_c*(-100)/reg_ds_cesm.AMOC_pi)
+            reg_ds_cesm.req_weakening_pi.loc[:, :, :, ssp_i] = (reg_ds_cesm.AMOC_pi - reg_ds_cesm.req_strength_pi.loc[:, :, :, ssp_i]) / reg_ds_cesm.AMOC_pi * 100
+            reg_ds_cesm.req_weakening_pd.loc[:, :, :, ssp_i] = (reg_ds_cesm.AMOC_pi - reg_ds_cesm.req_strength_pd.loc[:, :, :, ssp_i]) / reg_ds_cesm.AMOC_pi * 100
 
         reg_ds_cesm.attrs['future_window'] = list(fw)
         print(f'Saving CESM2 regression dataset to {cache_path}')
@@ -4491,7 +4724,7 @@ def load_giss_member_amoc_tas(season=''):
     used by get_giss_reg_ds and get_giss_panel_data.
     """
     validate_choice('season', season, ALLOWED_SEASONS)
-    hist_dir = '/work/uo1075/m300817/teu_amoc/data/CMIP6/historical/giss-e2-1-g'
+    hist_dir = data_path + 'CMIP6/historical/giss-e2-1-g'
     hist_seasonal_dir = ('/work/bu1431/T_EU_AMOC/CMIP6/historical/'
                          'giss-e2-1-g')
     amoc_list, tas_list = [], []
@@ -4641,13 +4874,19 @@ def get_giss_panel_data(masks=None, recompute=False,
                                time=slice(*time_slice))
                     for r, arr in t_region_dev.items()}
 
+    # Point selection is strict (joint finiteness) only over the aggregate
+    # regions, so adding country columns cannot change the point set — and
+    # thereby the fits — of the aggregates. Country columns keep NaNs; the
+    # per-region consumers (_giss_slope in the scaling-factor scripts)
+    # filter finiteness per region.
+    strict_regions = [r for r in regions if r in ('EU', 'NEU', 'WCE', 'MED')]
     xs, ys_r, mem_l, yr_l = [], {r: [] for r in regions}, [], []
     for m in GISS_NON_COMPOSITE:
         x_m = amoc_dev.sel(realiz=m).values
         yr_vals = amoc_dev.sel(realiz=m).time.dt.year.values
         ys_m = {r: t_region_dev[r].sel(realiz=m).values for r in regions}
         keep = np.isfinite(x_m)
-        for r in regions:
+        for r in strict_regions:
             keep = keep & np.isfinite(ys_m[r])
         xs.append(x_m[keep])
         for r in regions:
@@ -4659,6 +4898,10 @@ def get_giss_panel_data(masks=None, recompute=False,
     t_dev = np.stack([np.concatenate(ys_r[r]) for r in regions], axis=1)
     mem_flat = np.concatenate(mem_l)
     yr_flat = np.concatenate(yr_l).astype(int)
+
+    empty_cols = [r for i, r in enumerate(regions)
+                  if not np.isfinite(t_dev[:, i]).any()]
+    assert not empty_cols, f'GISS panel: all-NaN t_dev for regions {empty_cols}'
 
     # Sign-convention sanity: r1 is known weaker than the (r3,r4,r10)
     # composite, so its median ΔAMOC %-weakening must come out positive.
@@ -4699,7 +4942,10 @@ def get_giss_panel_data(masks=None, recompute=False,
     )
     ds = ds.drop_vars('height', errors='ignore')
     print(f'Saving GISS panel data to {panel_path}: sizes={dict(ds.sizes)}')
-    ds.to_netcdf(panel_path)
+    # Atomic write: a direct to_netcdf that hits an HDF5 lock held by a
+    # concurrent reader truncates the cache to 0 bytes before failing.
+    ds.to_netcdf(panel_path + '.tmp')
+    os.replace(panel_path + '.tmp', panel_path)
     return ds
 
 
@@ -5170,8 +5416,11 @@ def get_giss_reg_ds(recompute=False, masks=None, cmip6_ctrl_data=None, future_wi
         # annual-only version of this loader prior to 2026-05-26.
         delta_T_pi = T_2090.sel(scenar=ssps) - T_pi
         delta_T_pd = T_2090.sel(scenar=ssps) - T_pd_245
-        req_strength_pi = AMOC_2090.sel(scenar=ssps) - delta_T_pi / coef_c
-        req_strength_pd = AMOC_2090.sel(scenar=ssps) - delta_T_pd / coef_c
+        # Cooling-sign filter (coef K/Sv > 0): NaN where the per-pixel
+        # inversion is undefined — symmetric with HosMIP/MPI/CESM.
+        _coef_cool_g = coef_c.where(coef_c > 0)
+        req_strength_pi = AMOC_2090.sel(scenar=ssps) - delta_T_pi / _coef_cool_g
+        req_strength_pd = AMOC_2090.sel(scenar=ssps) - delta_T_pd / _coef_cool_g
         req_weakening_pi = (AMOC_pi_GISS - req_strength_pi) / AMOC_pi_GISS * 100
         req_weakening_pd = (AMOC_pi_GISS - req_strength_pd) / AMOC_pi_GISS * 100
 
@@ -5234,9 +5483,15 @@ def hosmip_regression_plot(multi_model_dict, window=10, region='EU', season='', 
     validate_choice('plot_bg', plot_bg, ALLOWED_PLOT_BG)
 
     if season != '':
+        # Bellomo & Mehling and Liu are published as annual fields only.
+        # Boot (monthly TREFHT) and vwb (Zenodo 15490235) are not.
         if not no_plots:
-            print('No seasonal data for other studies.')
-        bm_data, vwb_data, boot_data, liu_data = False, False, False, False
+            print('No seasonal data for Bellomo & Mehling / Liu.')
+        bm_data, liu_data = False, False
+        if season not in BOOT_SEASONS:
+            boot_data = False
+        if season not in VWB_SEASONS:
+            vwb_data = False
 
     if not no_plots:
         plt.style.use('default')
@@ -5314,6 +5569,11 @@ def hosmip_regression_plot(multi_model_dict, window=10, region='EU', season='', 
             # tas baseline: same season slice as the rolling series above.
             tpi_field = hosmip_reg_ds_dict[model].T_pi.sel(season=season)
             if is_latlon:
+                # Positional isel pairs this field with the sorted mmd series
+                # above; identical ascending grids verified 2026-08-15 — this
+                # guard catches any future descending-lat model.
+                assert np.array_equal(tpi_field.lat.values, tas_lat_sorted.lat.values), \
+                    f'{model}: cached T_pi grid != sorted mmd grid (positional isel unsafe)'
                 tas_base = tpi_field.isel(lat=lat, lon=lon)
             else:
                 tas_base = weighted_area_lat(tpi_field.where(
@@ -5528,28 +5788,44 @@ def hosmip_regression_plot(multi_model_dict, window=10, region='EU', season='', 
 
         if vwb_data:
 
+            vwb_ds = multi_model_dict['CESM1'].sel(season=season)
+
             Delta_AMOC_600_1500 = (
-                (multi_model_dict['CESM1'].sel(type='control', scenar='ghg', season='').amoc.values -
-                multi_model_dict['CESM1'].sel(type='control', scenar='pi', season='').amoc.values) -
-                (multi_model_dict['CESM1'].sel(type='hosing', scenar='ghg', season='').amoc.values -
-                multi_model_dict['CESM1'].sel(type='hosing', scenar='pi', season='').amoc.values)) / \
-                multi_model_dict['CESM1'].sel(type='control', scenar='pi', season='').amoc.values * 100
+                (vwb_ds.sel(type='control', scenar='ghg').amoc.values -
+                vwb_ds.sel(type='control', scenar='pi').amoc.values) -
+                (vwb_ds.sel(type='hosing', scenar='ghg').amoc.values -
+                vwb_ds.sel(type='hosing', scenar='pi').amoc.values)) / \
+                vwb_ds.sel(type='control', scenar='pi').amoc.values * 100
 
             if weakening_unit == 'sv':
-                Delta_AMOC_600_1500 = Delta_AMOC_600_1500 / 100 * multi_model_dict['CESM1'].sel(type='control', scenar='pi', season='').amoc.values
+                Delta_AMOC_600_1500 = Delta_AMOC_600_1500 / 100 * vwb_ds.sel(type='control', scenar='pi').amoc.values
 
             if is_region:
-                vwb_tas_1500 = weighted_area_lat(
-                    (multi_model_dict['CESM1'].sel(type='hosing', scenar='ghg', season='') - multi_model_dict['CESM1'].sel(type='hosing', scenar='pi', season='')).tas.where(
-                    multi_model_dict['CESM1'].mask.sel(region=region)).where(multi_model_dict['CESM1'].mask.sel(region='LAND')==0)
-                    ).mean('lat').mean('lon').values
-                vwb_tas_600 = weighted_area_lat(
-                    (multi_model_dict['CESM1'].sel(type='control', scenar='ghg', season='') - multi_model_dict['CESM1'].sel(type='control', scenar='pi', season='')).tas.where(
-                    multi_model_dict['CESM1'].mask.sel(region=region)).where(multi_model_dict['CESM1'].mask.sel(region='LAND')==0)
-                    ).mean('lat').mean('lon').values
+                # central, low and high estimates of the unpublished 0600_PI corner
+                vwb_dd = []
+                for vwb_var in ['tas', 'tas_lo', 'tas_hi']:
+                    d = (vwb_ds.sel(type='hosing', scenar='ghg')[vwb_var] - vwb_ds.sel(type='hosing', scenar='pi')[vwb_var]) - \
+                        (vwb_ds.sel(type='control', scenar='ghg')[vwb_var] - vwb_ds.sel(type='control', scenar='pi')[vwb_var])
+                    vwb_dd.append(float(weighted_area_lat(
+                        d.where(vwb_ds.mask.sel(region=region)).where(vwb_ds.mask.sel(region='LAND')==0)
+                        ).mean('lat').mean('lon').values))
+                vwb_mid, (vwb_lo, vwb_hi) = vwb_dd[0], sorted(vwb_dd[1:])
+                # estimated corner -> hollow marker + bracket; exact once the real field lands
+                vwb_est = vwb_hi - vwb_lo > 1e-9
 
                 # marker='$\\ddagger$'
-                ax.scatter(Delta_AMOC_600_1500, vwb_tas_1500 - vwb_tas_600, color=hosmip_colors['CESM2'], edgecolors='k', linewidths=1.5, marker='v', s=10*markersize, label='v. Westen & Baatsen\nRCP4.5 in 2400-2500', zorder=10, clip_on=False)
+                # white (not transparent) face: the marker sits on a dense
+                # CESM2-coloured scatter cloud in the seasonal panels
+                ax.scatter(Delta_AMOC_600_1500, vwb_mid,
+                           facecolors='white' if vwb_est else hosmip_colors['CESM2'],
+                           edgecolors=hosmip_colors['CESM2'] if vwb_est else 'k',
+                           linewidths=2.0 if vwb_est else 1.5, marker='v', s=10*markersize,
+                           label='v. Westen & Baatsen\nRCP4.5 in 2400-2500' + (' (est.)' if vwb_est else ''),
+                           zorder=10, clip_on=False)
+                if vwb_est:
+                    # bracket is narrower than the marker, so it goes on top
+                    ax.errorbar(Delta_AMOC_600_1500, vwb_mid, yerr=[[vwb_mid - vwb_lo], [vwb_hi - vwb_mid]],
+                                ecolor=hosmip_colors['CESM2'], elinewidth=1.4, capsize=2.5, zorder=11, clip_on=False)
 
         if liu_data:
 
@@ -5579,20 +5855,31 @@ def hosmip_regression_plot(multi_model_dict, window=10, region='EU', season='', 
             if is_region:
                 boot_x = []
                 boot_y = []
+                # Harmonised CESM2 % denominator (hist 1850–1899 ensemble
+                # mean, same convention as the HosMIP scatter in these axes).
+                # The piControl snapshot previously used here was legacy
+                # drift (~1.6% x rescale) — see METHODS 2026-08-15 (e).
+                _cesm2_pi_boot = (float(hosmip_reg_ds_dict['CESM2'].AMOC_pi)
+                                  if hosmip_reg_ds_dict is not None
+                                  else float(get_cesm_reg_ds(recompute=False).AMOC_pi))
                 for ssp_i in ['ssp126', 'ssp585']:
+                    # x stays season='' on purpose: AMOC26 is annual and the
+                    # seasonal slots are broadcast copies. y takes the
+                    # requested season (fixed 2026-08-17 — it was hardcoded
+                    # to '', so seasonal panels drew the annual scatter).
                     x = (multi_model_dict['CESM2'].amoc.sel(type='hosing', scenar=ssp_i, season='').rolling(time=window, center=True).mean('time').values -
                          multi_model_dict['CESM2'].amoc.sel(type='control', scenar=ssp_i, season='').rolling(time=window, center=True).mean('time').values) / (
-                         -multi_model_dict['CESM2'].amoc.sel(type='control', scenar='pi', season='').isel(time=0)).values * 100
+                         -_cesm2_pi_boot) * 100
 
                     if weakening_unit == 'sv':
-                        x = x / 100 * float(multi_model_dict['CESM2'].amoc.sel(type='control', scenar='pi', season='').isel(time=0).values)
+                        x = x / 100 * _cesm2_pi_boot
 
                     y = weighted_area_lat(
-                        multi_model_dict['CESM2'].tas.sel(type='hosing', scenar=ssp_i, season='').rolling(time=window, center=True).mean('time').where(
+                        multi_model_dict['CESM2'].tas.sel(type='hosing', scenar=ssp_i, season=season).rolling(time=window, center=True).mean('time').where(
                         multi_model_dict['CESM2'].mask.sel(region=region)
                         ).where(multi_model_dict['CESM2'].mask.sel(region='LAND')==0)).mean('lat').mean('lon').values - \
                         weighted_area_lat(
-                        multi_model_dict['CESM2'].tas.sel(type='control', scenar=ssp_i, season='').rolling(time=window, center=True).mean('time').where(
+                        multi_model_dict['CESM2'].tas.sel(type='control', scenar=ssp_i, season=season).rolling(time=window, center=True).mean('time').where(
                         multi_model_dict['CESM2'].mask.sel(region=region)
                         ).where(multi_model_dict['CESM2'].mask.sel(region='LAND')==0)).mean('lat').mean('lon').values
 
@@ -5773,12 +6060,11 @@ def hosmip_regression_plot(multi_model_dict, window=10, region='EU', season='', 
 
 def cesm_regressions(boot_data, multi_model_dict, masks, ssp='all', lat=None, lon=None, region='EU', window=10, regressions=True, combined_reg=True, add_combined_intercept=False, no_plots=False, plot_bg='white', low_ylim=-10, xlim=80, hosmip_cesm=False, cesm_amoc_pi_override=None, savefig=False, ext_ax=None, equation_y_pos=0.18, equation_y_spacing=0.07, compute_linearity=False, compute_scenario_independence=False, season=''):
     # cesm_amoc_pi_override: optional scalar to use as the % AMOC weakening
-    # denominator (Sv). When None, defaults to the piControl snapshot from
-    # multi_model_dict (legacy behaviour). When passed (e.g. the harmonised
-    # 1850–1899 CMIP6 historical ensemble-mean AMOC from
-    # ``get_hist_pi_baseline``), the returned slope is in K-per-(% relative
-    # to that override) — used by ``get_cesm_reg_ds`` to keep cached slopes
-    # internally consistent with ``reg_ds_cesm.AMOC_pi``.
+    # denominator (Sv). When None, defaults to the harmonised 1850–1899
+    # CMIP6 historical ensemble-mean AMOC (reg_ds_cesm.AMOC_pi) — the same
+    # convention every cached slope uses. The pre-2026-08-15 default was the
+    # piControl snapshot (17.96 vs 18.26 Sv, ~1.6% x rescale); callers
+    # that need a different denominator pass it explicitly.
 
     validate_choice('plot_bg', plot_bg, ALLOWED_PLOT_BG)
 
@@ -5811,15 +6097,17 @@ def cesm_regressions(boot_data, multi_model_dict, masks, ssp='all', lat=None, lo
     ssp_stes = {}
     ssp_rsqs = {}
 
+    # Resolve the denominator once per call (per-pixel scans pass it in via
+    # compute_kw so the cache is not re-opened thousands of times).
+    _cesm_amoc_pi = (cesm_amoc_pi_override
+                     if cesm_amoc_pi_override is not None
+                     else float(get_cesm_reg_ds(recompute=False).AMOC_pi.values))
+
     ssp_i = None
     SCENARIOS_CESM = ['ssp126', 'ssp585']
     for ssp_idx, ssp_i in enumerate(SCENARIOS_CESM):
         if ssp != 'all' and ssp_i != ssp:
                 continue
-
-        _cesm_amoc_pi = (cesm_amoc_pi_override
-                         if cesm_amoc_pi_override is not None
-                         else float(multi_model_dict['CESM2'].sel(scenar='pi', type='control', season='').amoc.isel(time=0).values))
         x = (boot_data.sel(scenar=ssp_i, type='hosing', season=season).amoc.rolling(time=window, center=True).mean("time").values - boot_data.sel(scenar=ssp_i, type='control', season=season).amoc.rolling(time=window, center=True).mean("time").values) / (-_cesm_amoc_pi) * 100
 
         if is_latlon:
@@ -6207,7 +6495,7 @@ def plot_net_cooling_ranges(dfs_countries, T_ref='pi', AMOC_metric='rel', season
     ax.spines["bottom"].set_position(("axes", 0.03))
 
 
-def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_ds_dict=None, hosmip_markers=False, T_ref='pi', season='', plot_bg='white', ext_ax=None, title=True, savefig=False, reg_ds_giss=None, giss_time_period='2101-2300', cmip_cooling_ds=None, cmip_cooling_decade=None, aggregate_first=True, amoc_extent=None, weakening_unit='pct', sv_xmax=None, amoc_extent_y=1.03):
+def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_ds_dict=None, hosmip_markers=False, T_ref='pi', season='', plot_bg='white', ext_ax=None, title=True, savefig=False, reg_ds_giss=None, giss_time_period='2101-2300', cmip_cooling_ds=None, cmip_cooling_decade=None, aggregate_first=True, amoc_extent=None, weakening_unit='pct', sv_xmax=None, amoc_extent_y=1.03, cmip_range_ds=None, cmip_range_mode='medians', nahosmip_overlay=False):
     # aggregate_first=True swaps the order in which the per-region net-cooling
     # point is built: instead of area-averaging the cached per-pixel
     # req_weakening_pi (which is the non-linear quantity (AMOC_pi - (AMOC_2090 -
@@ -6218,9 +6506,9 @@ def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_
     # in panel e even when the regional-mean slopes coincide.
     # ``aggregate_first`` works under both ``T_ref='pi'`` and ``T_ref='pd'``;
     # the only difference is which baseline tas field substitutes into the
-    # regional (T_90 - T_ref) / slope expression. T_pd_245 is annual-only,
-    # so seasonal aggregate-first under PD is still not implemented (see the
-    # explicit check further down inside the HosMIP branch).
+    # regional (T_90 - T_ref) / slope expression. Every reg_ds now carries a
+    # populated seasonal T_pd_245 (reg_ds_cesm since 2026-08-17), so seasonal
+    # aggregate-first under PD is supported and unguarded.
     plt.style.use('default')
     # weakening_unit='sv' plots the net-cooling point as absolute Sv weakening
     # below each model's own PI instead of % weakening. It is only defined for
@@ -6234,12 +6522,31 @@ def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_
             raise NotImplementedError("weakening_unit='sv' requires aggregate_first=True")
         if cmip_cooling_ds is not None:
             raise NotImplementedError("weakening_unit='sv' with the CMIP-cooling overlay is not supported")
+    # cmip_range_ds replaces the NAHosMIP min-max bar with the Synthetic
+    # CMIP6 range (best evidence per model: direct + rescaled + synthetic
+    # cooling sensitivities); it is only defined for the PI-referenced,
+    # %-weakening panel. Seasonal caches exist since 2026-08-23 and carry
+    # their season as an attr, so a cache built for a different season than
+    # the panel is a mismatch, not a fallback. nahosmip_overlay additionally
+    # hatches the original NAHosMIP min–max on top (appendix/internal).
+    if cmip_range_ds is not None:
+        if cmip_range_mode not in ('medians', 'mc'):
+            raise ValueError(f"cmip_range_mode must be 'medians' or 'mc'; got {cmip_range_mode!r}")
+        if T_ref != 'pi' or weakening_unit != 'pct':
+            raise NotImplementedError("cmip_range_ds requires T_ref='pi', weakening_unit='pct'")
+        _cr_season = cmip_range_ds.attrs.get('season', '')
+        if _cr_season != season:
+            raise ValueError(f"cmip_range_ds is season={_cr_season!r}, panel is season={season!r}")
 
     def _net_cooling_x(amoc_pi, amoc_90, T_90, T_ref_, slope):
         """Net-cooling point: Sv weakening (unit='sv') or % weakening (default).
 
         Under 'sv', points beyond the model's own PI (>100% weakening, i.e. more
-        than a full AMOC collapse) are suppressed to NaN so they are not plotted."""
+        than a full AMOC collapse) are suppressed to NaN so they are not plotted.
+        A regional slope with warming sign (K/Sv <= 0) means no regional
+        net-cooling point exists — NaN, not a sign-flipped inversion."""
+        if not np.isfinite(float(slope)) or float(slope) <= 0:
+            return np.nan
         weakening_sv = amoc_pi - (amoc_90 - (T_90 - T_ref_) / slope)
         if weakening_unit != 'sv':
             return weakening_sv / amoc_pi * 100
@@ -6270,16 +6577,6 @@ def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_
     # if season != '':
     #     raise NotImplementedError("Only annual data (season='') is implemented in this function.")
 
-    regions_cutoff30k = [r for r in regions if r not in ['LU', 'CY', 'XK', 'ME', 'SI', 'MK', 'AL']]
-
-    cesm_effect_sizes = {}
-    mpi_effect_sizes = {}
-    for r in regions_cutoff30k:
-        cesm_effect_sizes[r] = weighted_area_lat(reg_ds_cesm.req_weakening_pi.sel(scenar='ssp126').where(masks['CESM2'][r])).mean('lat').mean('lon')
-        mpi_effect_sizes[r] = weighted_area_lat(reg_ds_mpi.req_weakening_pi.sel(scenar='ssp126').where(masks['MPI-ESM1-2-LR'][r])).mean('lat').mean('lon')
-
-    # countries = sorted(cesm_effect_sizes.keys(), key=lambda x: cesm_effect_sizes[x], reverse=True)
-    # countries = sorted(mpi_effect_sizes.keys(), key=lambda x: mpi_effect_sizes[x], reverse=True)
     countries = list(reversed(regions_cutoff30k))
 
     group_centers = np.arange(len(countries)+1)  # +1 for the EU aggregate
@@ -6287,6 +6584,12 @@ def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_
 
     bar_alpha = 0.7
     line_alpha = 1.0
+
+    # Median tick (cmip_range_ds branch below) is drawn as a point-sized '|'
+    # marker rather than a data-unit vlines span, so its rendered footprint
+    # matches the GISS marker (s=40, a circle's area) regardless of the
+    # panel's data-to-pixel scaling: diameter_pt = 2*sqrt(area/pi).
+    _MEDIAN_TICK_PT = 2 * np.sqrt(40 / np.pi)
 
     vertical_offsets = {'ssp126': 1., 'ssp245': 0., 'ssp370': -1.}
 
@@ -6298,9 +6601,10 @@ def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_
     legend_handles.append(Line2D([], [], marker='*', color=legend_color, linestyle='None', markersize=8))
     legend_labels.append('MPI-ESM1.2-LR (this study)')
 
-    if season == '':
-        legend_handles.append(Line2D([], [], marker='d', color=legend_color, linestyle='None', markersize=5))
-        legend_labels.append('CESM2 (Boot et al. 2024)')
+    # CESM2 entries are season-independent since 2026-08-17: reg_ds_cesm
+    # carries a season dim, built from Boot's monthly TREFHT.
+    legend_handles.append(Line2D([], [], marker='d', color=legend_color, linestyle='None', markersize=5))
+    legend_labels.append('CESM2 (Boot et al. 2024)')
 
     # GISS legend entry is independent of season — reg_ds_giss carries
     # seasonal req_weakening_pi/pd since the 2026-05-27 seasonal scenmip
@@ -6309,15 +6613,37 @@ def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_
         legend_handles.append(Line2D([], [], marker='o', color=legend_color, linestyle='None', markersize=6, markeredgewidth=0))
         legend_labels.append(f'GISS-E2-1-G (Romanou et al. 2023, {giss_time_period} fit)')
 
-    if season == '':
-        # Combined forcing: thin bar (depends on CESM, which is annual-only).
-        legend_handles.append(Line2D([], [], color=legend_color, alpha=bar_alpha, linewidth=5, solid_capstyle='butt'))
-        legend_labels.append('Combined forcing range (MPI-ESM1.2-LR & CESM2)')
+    legend_handles.append(Line2D([], [], color=legend_color, alpha=bar_alpha, linewidth=5, solid_capstyle='butt'))
+    legend_labels.append('Combined forcing range (MPI-ESM1.2-LR & CESM2)')
 
-    # NAHosMIP: thin transparent bar
-    hosmip_bar_h = Line2D([], [], color=legend_color, alpha=0.3, linewidth=5, solid_capstyle='butt')
-    legend_handles.append(hosmip_bar_h)
-    legend_labels.append('Preindustrial hosing range (NAHosMIP models)')
+    if cmip_range_ds is None:
+        # NAHosMIP: thin transparent bar
+        hosmip_bar_h = Line2D([], [], color=legend_color, alpha=0.3, linewidth=5, solid_capstyle='butt')
+        legend_handles.append(hosmip_bar_h)
+        legend_labels.append('Preindustrial hosing range (NAHosMIP models)')
+    else:
+        # Concise entries (composition detail lives in the caption); the
+        # median entry overlays a darkened tick on the IQR swatch via a
+        # tuple handle (HandlerTuple in the ax.legend call below). Marker
+        # size (points, not data units) mirrors the actual median tick's
+        # sizing so the swatch reads at the same scale as the plotted mark.
+        _iqr_h = Line2D([], [], color=legend_color, alpha=0.48, linewidth=5, solid_capstyle='butt')
+        _med_h = (Line2D([], [], color=legend_color, alpha=0.48, linewidth=5, solid_capstyle='butt'),
+                  Line2D([], [], color=legend_color, marker='|', markersize=_MEDIAN_TICK_PT,
+                         markeredgewidth=2.2, linestyle='None'))
+        _full_h = Line2D([], [], color=legend_color, alpha=0.22, linewidth=5, solid_capstyle='butt')
+        if cmip_range_mode == 'medians':
+            legend_handles += [_iqr_h, _med_h, _full_h]
+            legend_labels += ['Synthetic CMIP6 range (IQR)', 'Synthetic CMIP6 range (median)',
+                              'Full synthetic CMIP6 range']
+        else:
+            legend_handles += [_iqr_h, _med_h, _full_h]
+            legend_labels += ['Synthetic CMIP6 range (IQR of draws)',
+                              'Median draw', '95% of draws']
+        if nahosmip_overlay:
+            legend_handles.append(Rectangle((0, 0), 1, 1, facecolor='none',
+                                            edgecolor=legend_color, linewidth=1.0))
+            legend_labels.append('NAHosMIP range (PI hosing)')
 
     # CMIP-projected cooling markers from CMIP6 ScenarioMIP runs. Visually
     # distinguished from the regression-derived net-cooling-point ranges by
@@ -6407,27 +6733,22 @@ def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_
                 slope_m  = weighted_area_lat(_select(reg_ds_mpi.coef_ensmean.sel(season=season), 'MPI-ESM1-2-LR', r)).mean('lat').mean('lon')
                 mpi_value = _net_cooling_x(amoc_pi_m, amoc_90_m, T_90_m, T_ref_m, slope_m)
                 # Combined CESM: coef_ensmean is K/% — convert to K/Sv via (-100/AMOC_pi).
-                # CESM2 reg_ds is annual-only by construction (no season dim).
-                # Skip the CESM diamond + range in seasonal panels.
-                if season == '':
-                    amoc_pi_c = float(reg_ds_cesm.AMOC_pi.values)
-                    amoc_90_c = float(reg_ds_cesm.AMOC_future.sel(scenar=ssp_i).values)
-                    if T_ref == 'pi':
-                        T_ref_c = weighted_area_lat(_select(reg_ds_cesm.T_pi, 'CESM2', r)).mean('lat').mean('lon')
-                    else:
-                        T_ref_c = weighted_area_lat(_select(reg_ds_cesm.T_pd_245, 'CESM2', r)).mean('lat').mean('lon')
-                    T_90_c   = weighted_area_lat(_select(reg_ds_cesm.T_future.sel(scenar=ssp_i), 'CESM2', r)).mean('lat').mean('lon')
-                    slope_c_pct = weighted_area_lat(_select(reg_ds_cesm.coef_ensmean, 'CESM2', r)).mean('lat').mean('lon')
-                    slope_c = slope_c_pct * (-100) / amoc_pi_c
-                    cesm_value = _net_cooling_x(amoc_pi_c, amoc_90_c, T_90_c, T_ref_c, slope_c)
+                amoc_pi_c = float(reg_ds_cesm.AMOC_pi.values)
+                amoc_90_c = float(reg_ds_cesm.AMOC_future.sel(scenar=ssp_i).values)
+                if T_ref == 'pi':
+                    T_ref_c = weighted_area_lat(_select(reg_ds_cesm.T_pi.sel(season=season), 'CESM2', r)).mean('lat').mean('lon')
                 else:
-                    cesm_value = np.nan
+                    T_ref_c = weighted_area_lat(_select(reg_ds_cesm.T_pd_245.sel(season=season), 'CESM2', r)).mean('lat').mean('lon')
+                T_90_c   = weighted_area_lat(_select(reg_ds_cesm.T_future.sel(scenar=ssp_i, season=season), 'CESM2', r)).mean('lat').mean('lon')
+                slope_c_pct = weighted_area_lat(_select(reg_ds_cesm.coef_ensmean.sel(season=season), 'CESM2', r)).mean('lat').mean('lon')
+                slope_c = slope_c_pct * (-100) / amoc_pi_c
+                cesm_value = _net_cooling_x(amoc_pi_c, amoc_90_c, T_90_c, T_ref_c, slope_c)
             elif T_ref == 'pi':
                 mpi_value = weighted_area_lat(_select(reg_ds_mpi.req_weakening_pi.sel(scenar=ssp_i, season=season), 'MPI-ESM1-2-LR', r)).mean('lat').mean('lon')
-                cesm_value = weighted_area_lat(_select(reg_ds_cesm.req_weakening_pi.sel(scenar=ssp_i), 'CESM2', r)).mean('lat').mean('lon') if season == '' else np.nan
+                cesm_value = weighted_area_lat(_select(reg_ds_cesm.req_weakening_pi.sel(scenar=ssp_i, season=season), 'CESM2', r)).mean('lat').mean('lon')
             else:  # T_ref == 'pd'
-                mpi_value = weighted_area_lat(reg_ds_mpi.req_weakening_pd.sel(scenar=ssp_i, season=season).where(masks['MPI-ESM1-2-LR'][r])).mean('lat').mean('lon')
-                cesm_value = weighted_area_lat(reg_ds_cesm.req_weakening_pd.sel(scenar=ssp_i).where(masks['CESM2'][r])).mean('lat').mean('lon') if season == '' else np.nan
+                mpi_value = weighted_area_lat(_select(reg_ds_mpi.req_weakening_pd.sel(scenar=ssp_i, season=season), 'MPI-ESM1-2-LR', r)).mean('lat').mean('lon')
+                cesm_value = weighted_area_lat(_select(reg_ds_cesm.req_weakening_pd.sel(scenar=ssp_i, season=season), 'CESM2', r)).mean('lat').mean('lon')
 
             if ssp_i == 'ssp126':
                 mpi_value_item = mpi_value.values.item() if hasattr(mpi_value, 'values') else float(mpi_value)
@@ -6435,16 +6756,22 @@ def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_
                                    else float(cesm_value))
                 _finite = [v for v in (mpi_value_item, cesm_value_item) if np.isfinite(v)]
                 mpi_cesm_values_ssp126[r] = min(_finite) if _finite else np.nan
+                if r in {'NO','NL','DK','EE','FR','MD','SK','CH','GR','BG','HU','TR','HR','RS','IT'}:
+                    print(f"COMPONENT_DEBUG agg={aggregate_first} r={r} mpi={mpi_value_item:.3f} cesm={cesm_value_item:.3f}")
 
             hosmip_values = []
             for model in hosmip_labels:
                 if T_ref not in ('pi', 'pd'):
                     raise NotImplementedError("Only T_ref='pi' and T_ref='pd' are implemented in this function.")
                 if aggregate_first:
-                    # HosMIP: lin_coef_hosmip is K/% with cooling-pixel filter (<0)
-                    # applied in the cached path at functions.py:3085; mirror it
-                    # here before area-averaging so the regional slope is built
-                    # from the same pixel set the per-pixel cache uses.
+                    # HosMIP: lin_coef_hosmip is K/%. The regional slope is the
+                    # UNFILTERED area-mean (= the slope of the regional-mean T
+                    # series, by linearity of OLS) — symmetric with the
+                    # MPI/CESM/GISS aggregate-first slopes. The per-pixel
+                    # cooling filter belongs to the cached per-pixel req
+                    # fields only; a non-cooling REGIONAL slope is handled by
+                    # the _net_cooling_x guard (NaN). Changed 2026-08-15 (e);
+                    # previously the <0 pixel filter was mirrored here.
                     hr_ds = hosmip_reg_ds_dict[model]
                     amoc_pi_h = float(hr_ds.AMOC_pi.values)
                     amoc_90_h = float(hr_ds.AMOC_future.sel(scenar=ssp_i).values)
@@ -6453,8 +6780,7 @@ def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_
                     else:
                         T_ref_h = weighted_area_lat(_select(hr_ds.T_pd_245.sel(season=season), model, r)).mean('lat').mean('lon')
                     T_90_h = weighted_area_lat(_select(hr_ds.T_future.sel(scenar=ssp_i, season=season), model, r)).mean('lat').mean('lon')
-                    slope_h_pct_field = hr_ds.lin_coef_hosmip.sel(season=season)
-                    slope_h_pct = weighted_area_lat(_select(slope_h_pct_field.where(slope_h_pct_field < 0), model, r)).mean('lat').mean('lon')
+                    slope_h_pct = weighted_area_lat(_select(hr_ds.lin_coef_hosmip.sel(season=season), model, r)).mean('lat').mean('lon')
                     slope_h = slope_h_pct * (-100) / amoc_pi_h
                     hosmip_value = _net_cooling_x(amoc_pi_h, amoc_90_h, T_90_h, T_ref_h, slope_h)
                 elif T_ref == 'pi':
@@ -6465,7 +6791,11 @@ def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_
                 #     hosmip_values.append(hosmip_value.values.item())
                 # else:
                 #     continue
-                hosmip_values.append(hosmip_value.values.item())
+                # _net_cooling_x returns a bare float when its cooling-sign
+                # guard fires (regional slope <= 0 -> NaN).
+                hosmip_values.append(hosmip_value.values.item()
+                                     if hasattr(hosmip_value, 'values')
+                                     else float(hosmip_value))
                 
                 if hosmip_markers:
                     hosmip_marker = 'x'
@@ -6492,23 +6822,81 @@ def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_
                             marker=hosmip_marker, s=(40 if hosmip_marker == '*' else 22), edgecolors='none', clip_on=True)
 
             _hv = [v for v in hosmip_values if np.isfinite(v)]
-            if _hv:
+            if _hv and cmip_range_ds is None:
                 ax.barh(group_centers[i] - 0.01 + vertical_offsets[ssp_i] * bar_height,
                         max(_hv) - min(_hv),
                         left = min(_hv),
                         height=bar_height * 0.8, alpha=0.4, color=hosing_colors[ssp_i]['ge'], clip_on=True)
 
-            if season == '':
-                ax.barh(group_centers[i] - 0.01 + vertical_offsets[ssp_i] * bar_height,
-                        mpi_value - cesm_value,
-                        left = cesm_value,
-                        height=bar_height * 0.8, alpha=bar_alpha, color=hosing_colors[ssp_i]['ge'])
+            # Synthetic CMIP6 range (best evidence per model, membership B).
+            # Three layers per (row, ssp): faint full extent (min–max of model
+            # best estimates for 'medians'; central 95% of pooled draws for
+            # 'mc' — deliberately different objects, stated in the caption),
+            # the IQR band at alpha 0.4, and a white vertical median tick.
+            # Bars clip at the 100% cap; a layer whose lower edge is beyond
+            # the cap (or inf) draws nothing, and a beyond-cap median gets no
+            # tick. The combined-forcing bar (drawn later, alpha 0.7) stays
+            # the darkest element on top.
+            if cmip_range_ds is not None:
+                cr = cmip_range_ds.sel(region=r, scenario=ssp_i)
+                y_bar = group_centers[i] - 0.01 + vertical_offsets[ssp_i] * bar_height
+                if cmip_range_mode == 'medians':
+                    lo_f, hi_f = float(cr.wmin), float(cr.wmax)
+                    lo, hi, med = float(cr.q25), float(cr.q75), float(cr['median'])
+                else:
+                    lo_f, hi_f = float(cr.mc_lo), float(cr.mc_hi)
+                    lo, hi, med = float(cr.mc_q25), float(cr.mc_q75), float(cr.mc_median)
+                if np.isfinite(lo_f) and lo_f <= 100:
+                    ax.barh(y_bar, min(hi_f, 100) - lo_f, left=lo_f,
+                            height=bar_height * 0.8, alpha=0.22,
+                            color=hosing_colors[ssp_i]['ge'], clip_on=True)
+                if np.isfinite(lo) and lo <= 100:
+                    ax.barh(y_bar, min(hi, 100) - lo, left=lo,
+                            height=bar_height * 0.8, alpha=0.48,
+                            color=hosing_colors[ssp_i]['ge'], clip_on=True)
+                if np.isfinite(med) and med <= 100:
+                    # Darkened version of the row's own colour (same recipe as
+                    # the MPI-ESM/CESM2 AMOC-projection ticks above the panel,
+                    # functions.py:7010-7040). Drawn as a point-sized '|'
+                    # marker rather than an ax.vlines data-unit span: a data-
+                    # unit span sized to "a bit past the bar edges" rendered
+                    # imperceptibly (the bar height already saturates most of
+                    # the row), whereas a point-based marker's on-canvas size
+                    # is set directly and can be matched to the GISS marker's
+                    # own point size (_MEDIAN_TICK_PT) regardless of the
+                    # panel's data-to-pixel scaling. zorder 1.5: above every
+                    # bar (patches at 1, incl. the combined-forcing bar) but
+                    # below the model markers, so a tick under a star/diamond
+                    # does not cut through it.
+                    # Exact same darkening recipe as the MPI-ESM AMOC-
+                    # projection tick above the panel (functions.py:~7030).
+                    _med_rgb = plt.matplotlib.colors.to_rgb(hosing_colors[ssp_i]['ge'])
+                    _mh, _ml, _ms = colorsys.rgb_to_hls(*_med_rgb)
+                    _med_color = colorsys.hls_to_rgb(_mh, max(0, _ml * 0.7), min(1, _ms * 1.3))
+                    ax.plot(med, y_bar, marker='|', markersize=_MEDIAN_TICK_PT,
+                            markeredgewidth=2.2, color=_med_color, zorder=1.5,
+                            clip_on=True)
+                # Appendix/internal overlay: the original NAHosMIP min–max as
+                # a thin neutral outline on top of the synthetic band (no
+                # fill, no hatching).
+                if nahosmip_overlay and _hv:
+                    _ov_lo = min(_hv)
+                    _ov_w = min(max(_hv), 100) - _ov_lo
+                    if np.isfinite(_ov_lo) and _ov_lo <= 100 and _ov_w > 0:
+                        ax.barh(y_bar, _ov_w, left=_ov_lo,
+                                height=bar_height * 0.8, facecolor='none',
+                                edgecolor='0.35' if plot_bg != 'black' else '0.8',
+                                linewidth=0.5, clip_on=True, zorder=6)
+
+            ax.barh(group_centers[i] - 0.01 + vertical_offsets[ssp_i] * bar_height,
+                    mpi_value - cesm_value,
+                    left = cesm_value,
+                    height=bar_height * 0.8, alpha=bar_alpha, color=hosing_colors[ssp_i]['ge'])
 
             ax.scatter(mpi_value,
                        group_centers[i] + vertical_offsets[ssp_i] * bar_height, alpha=line_alpha, color=hosing_colors[ssp_i]['ge'], marker='*', s=50)
-            if season == '':
-                ax.scatter(cesm_value,
-                        group_centers[i] + vertical_offsets[ssp_i] * bar_height, alpha=line_alpha, color=hosing_colors[ssp_i]['ge'], marker='d', s=25)
+            ax.scatter(cesm_value,
+                    group_centers[i] + vertical_offsets[ssp_i] * bar_height, alpha=line_alpha, color=hosing_colors[ssp_i]['ge'], marker='d', s=25)
 
             # GISS marker (diamond). Drawn when reg_ds_giss is supplied,
             # for any season the dataset carries (annual + djf/jja since
@@ -6603,7 +6991,12 @@ def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_
             ax.add_patch(Rectangle((0, group_centers[i] - 0.5), 1.2 * _xmax, 1, color='black', alpha=0.15, zorder=0, linewidth=0, clip_on=False))
 
     range_y = amoc_extent_y  # y position above the upper x-axis (in axes coords)
-    range_height = 0.006  # thickness of the colored range
+    range_height = 0.006 * 0.25  # thickness of the colored range (quartered per 2026-09 request)
+    # MPI/CESM tick overshoot past the range rect, scaled down with it so the
+    # tick still reads as "spanning the bar plus a bit" at the smaller height.
+    # 2x the plain proportional scaling (2026-09 request) so the ticks stay
+    # visibly poking out past the now-thin bar.
+    tick_overshoot = 0.001 * 0.25 * 2
 
     for idx, ssp in enumerate(ssps):
         # Get the AMOC_extent range for this SSP (Sv bounds when unit='sv').
@@ -6637,7 +7030,7 @@ def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_
         bar_y = range_y + idx * 0.01
         ax.plot(
             [mpi_weakening_frac, mpi_weakening_frac],
-            [bar_y - 0.001, bar_y + range_height + 0.001],
+            [bar_y - tick_overshoot, bar_y + range_height + tick_overshoot],
             color=line_color, linewidth=2,
             transform=ax.transAxes, clip_on=False, zorder=11
         )
@@ -6652,7 +7045,7 @@ def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_
         cesm_line_color = colorsys.hls_to_rgb(h, min(1, l + 0.30), min(1, s * 1.3))
         ax.plot(
             [cesm_weakening_frac, cesm_weakening_frac],
-            [bar_y - 0.001, bar_y + range_height + 0.001],
+            [bar_y - tick_overshoot, bar_y + range_height + tick_overshoot],
             color=cesm_line_color, linewidth=2,
             transform=ax.transAxes, clip_on=False, zorder=10
         )
@@ -6669,15 +7062,17 @@ def plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_
         annotation_clip=False
     )
 
+    from matplotlib.legend_handler import HandlerTuple
     ax.legend(legend_handles, legend_labels,
               frameon=True, bbox_to_anchor=(0.02, 0.055), loc='lower left', fontsize=10,
               title=('Annual' if season=='' else f'Seasonal ({season.upper()})') + ' net-cooling AMOC weakening w.r.t. ' + ('preindustrial' if T_ref=='pi' else 'present-day'),
-              title_fontproperties={'weight': 'bold', 'size': 10})
+              title_fontproperties={'weight': 'bold', 'size': 10},
+              handler_map={tuple: HandlerTuple(ndivide=1)})
 
     # Add text box (in axes coordinates)
     ax.text(
         0.66,  # x position in axes fraction (0.18 when on the left)
-        arrow_y, 'CMIP6 AMOC projections',
+        arrow_y, 'Projected AMOC weakening (CMIP6)',
         va='center', ha='left',
         transform=ax.transAxes,
         bbox=dict(boxstyle='round,pad=0.3', fc='white' if plot_bg != 'black' else '#222', ec='none', alpha=0.8),
