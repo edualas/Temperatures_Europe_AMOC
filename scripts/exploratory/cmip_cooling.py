@@ -66,6 +66,9 @@ CESM2_RETRACTED_REA = {rea for model, rea in cmip6_inventory.RETRACTED
                        if model == 'CESM2'}
 
 CACHE_PATH = '/home/m/m300940/teu_amoc/data/cmip_cooling.nc'
+if not os.path.isdir(os.path.dirname(CACHE_PATH)):  # off-Levante cache mirror
+    CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              '..', '..', 'data', 'cmip_cooling.nc')
 
 DEFAULT_MODELS = ['cesm2', 'mri-esm2-0']
 DEFAULT_SCENARIOS = ['ssp126', 'ssp245', 'ssp370', 'ssp585']
@@ -84,7 +87,7 @@ DECADE_LABELS = [f'{a}-{b}' for a, b in DECADES]
 # %%
 # HELPERS
 
-def _list_realisations(scenario, var, models):
+def list_realisations(scenario, var, models):
     """Return ``{model: sorted list of realisation strings}`` by scanning disk.
 
     Thin wrapper around :func:`cmip6_inventory.available_realisations`.
@@ -100,7 +103,7 @@ def _list_realisations(scenario, var, models):
         scenario, var, models=list(models), esgf_names=False)
 
 
-def _resolve_path(model, scenario, rea, var):
+def resolve_cache_path(model, scenario, rea, var):
     """Return the actual file path for a (model, scenario, rea, var) tuple.
 
     Thin wrapper around :func:`cmip6_inventory.resolve_path`. Preserves the
@@ -110,16 +113,23 @@ def _resolve_path(model, scenario, rea, var):
     return cmip6_inventory.resolve_path(model, scenario, rea, var)
 
 
-def _open_tas(model, scenario, rea):
-    """Open a yearly tas file as a DataArray, K, lat/lon native grid."""
-    p = _resolve_path(model, scenario, rea, 'tas')
+def _open_tas(model, scenario, rea, season=''):
+    """Open a yearly tas file as a DataArray, K, lat/lon native grid.
+
+    ``season`` in ``('djf', 'jja')`` switches to the seasonal cache via
+    ``cmip6_inventory.open_seasonal_tas`` (which also absorbs the multi-var
+    files and the upstream historical time-stamp defect).
+    """
+    if season:
+        return cmip6_inventory.open_seasonal_tas(model, scenario, rea, season)
+    p = resolve_cache_path(model, scenario, rea, 'tas')
     return xr.open_dataarray(p, use_cftime=True)
 
 
 def _ensure_continuous_yearly(da):
     """Reindex `da` to a continuous yearly cftime axis, NaN-padding gaps.
 
-    `_ens_mean_concat` concatenates per-rea historical + scenario, but
+    `ens_mean_concat` concatenates per-rea historical + scenario, but
     some rea (e.g. CESM2 ssp126 r10 amoc, 2065-2100 only) leave a gap.
     xarray's `.rolling(time=N).mean()` is index-based and would silently
     average across the gap. Padding with NaN forces correct propagation:
@@ -137,7 +147,7 @@ def _ensure_continuous_yearly(da):
 
 
 def _open_amoc(model, scenario, rea):
-    p = _resolve_path(model, scenario, rea, 'amoc')
+    p = resolve_cache_path(model, scenario, rea, 'amoc')
     da = xr.open_dataarray(p, use_cftime=True)
     # Drop the scalar 'lev' coord (amoc26 is evaluated at max-over-lev).
     if 'lev' in da.coords:
@@ -145,7 +155,7 @@ def _open_amoc(model, scenario, rea):
     return da
 
 
-def _ens_mean_concat(model, scenario, rea_list, var):
+def ens_mean_concat(model, scenario, rea_list, var, season=''):
     """Ensemble-mean of historical+scenario for the given var.
 
     Returns DataArray on the model's native grid (tas) or 1-D (amoc),
@@ -154,16 +164,23 @@ def _ens_mean_concat(model, scenario, rea_list, var):
     Per-rea historical is concatenated with per-rea scenario, then the
     ensemble mean is taken across realisations. Realisations missing from
     either period are skipped.
+
+    ``season`` applies to tas only (AMOC at 26N has no seasonal sibling).
+    Membership is decided on the *annual* availability so a seasonal
+    ensemble is the same set of members as its annual counterpart; a member
+    whose seasonal file is absent raises rather than silently shrinking the
+    ensemble.
     """
     open_fn = _open_tas if var == 'tas' else _open_amoc
+    seas = season if var == 'tas' else ''
 
-    # Build per-rea availability using _resolve_path so both search
+    # Build per-rea availability using resolve_cache_path so both search
     # roots are checked uniformly (uo1075 legacy + bu1431 mirror).
     hist_avail = []
     sce_avail = []
     for rea in rea_list:
         try:
-            _resolve_path(model, 'historical', rea, var)
+            resolve_cache_path(model, 'historical', rea, var)
             hist_avail.append(rea)
         except FileNotFoundError:
             pass
@@ -178,11 +195,15 @@ def _ens_mean_concat(model, scenario, rea_list, var):
 
     per_rea_full = []
     for rea in common:
-        h_path = _resolve_path(model, 'historical', rea, var)
-        h = xr.open_dataarray(h_path, use_cftime=True)
+        if seas:
+            h = open_fn(model, 'historical', rea, seas)
+            s = open_fn(model, scenario, rea, seas)
+        else:
+            h_path = resolve_cache_path(model, 'historical', rea, var)
+            h = xr.open_dataarray(h_path, use_cftime=True)
+            s = open_fn(model, scenario, rea)
         if 'lev' in h.coords:
             h = h.drop_vars('lev')
-        s = open_fn(model, scenario, rea)
         full = xr.concat([h, s], dim='time')
         full = _ensure_continuous_yearly(full)
         per_rea_full.append(full)
@@ -194,13 +215,13 @@ def _ens_mean_concat(model, scenario, rea_list, var):
     return ens, common
 
 
-def _country_series(tas, mask):
+def country_series(tas, mask):
     """Country-area-weighted yearly tas series from a (time, lat, lon) field."""
     masked = tas.where(mask)
     return functions.weighted_area_lat(masked).mean('lat').mean('lon')
 
 
-def _decadal_mean(series, dec):
+def decadal_mean(series, dec):
     """Mean of a yearly series over a (start, end) decade block, or NaN."""
     block = series.sel(time=slice(dec[0], dec[1]))
     if block.time.size == 0:
@@ -248,18 +269,33 @@ def make_cmip_cooling_ds(recompute=False, models=None, scenarios=None,
         if verbose:
             print(f"\n=== {model} ===")
         for si, sce in enumerate(scenarios):
-            tas_rea = _list_realisations(sce, 'tas', [model])[model]
-            amoc_rea = _list_realisations(sce, 'amoc', [model])[model]
+            tas_rea = list_realisations(sce, 'tas', [model])[model]
+            amoc_rea = list_realisations(sce, 'amoc', [model])[model]
             common = sorted(set(tas_rea) & set(amoc_rea))
             if verbose:
                 print(f"  {sce}: tas={len(tas_rea)}, amoc={len(amoc_rea)}, "
                       f"common={len(common)}")
             if not common:
                 continue
-            tas_ens, tas_used = _ens_mean_concat(model, sce, common, 'tas')
-            amoc_ens, amoc_used = _ens_mean_concat(model, sce, common, 'amoc')
+            tas_ens, tas_used = ens_mean_concat(model, sce, common, 'tas')
+            amoc_ens, amoc_used = ens_mean_concat(model, sce, common, 'amoc')
             if tas_ens is None or amoc_ens is None:
                 continue
+            # ens_mean_concat re-filters by per-variable historical
+            # availability; the decadal tas anomalies and weakening are
+            # paired downstream, so both must come from the same members —
+            # re-intersect on the actually-used sets when they differ.
+            if set(tas_used) != set(amoc_used):
+                used = sorted(set(tas_used) & set(amoc_used))
+                if verbose:
+                    print(f"  {sce}: tas/amoc member mismatch "
+                          f"({len(tas_used)}/{len(amoc_used)}), re-intersecting to {len(used)}")
+                if not used:
+                    continue
+                tas_ens, tas_used = ens_mean_concat(model, sce, used, 'tas')
+                amoc_ens, amoc_used = ens_mean_concat(model, sce, used, 'amoc')
+                assert set(tas_used) == set(amoc_used) == set(used), \
+                    f"{model} {sce}: member sets diverge after re-intersection"
             n_real_tas[mi, si] = len(tas_used)
             n_real_amoc[mi, si] = len(amoc_used)
             if model == 'mri-esm2-0' and sce == 'ssp126':
@@ -268,7 +304,7 @@ def make_cmip_cooling_ds(recompute=False, models=None, scenarios=None,
             # Baseline AMOC and decadal-mean AMOC weakening (country-independent).
             amoc_pi = float(amoc_ens.sel(time=BASELINE_SLICE).mean('time'))
             baseline_amoc_out[mi, si] = amoc_pi
-            amoc_dec = np.array([_decadal_mean(amoc_ens, d) for d in DECADES])
+            amoc_dec = np.array([decadal_mean(amoc_ens, d) for d in DECADES])
             if np.isfinite(amoc_pi) and amoc_pi != 0:
                 weak_dec = 100.0 * (1.0 - amoc_dec / amoc_pi)
             else:
@@ -291,11 +327,11 @@ def make_cmip_cooling_ds(recompute=False, models=None, scenarios=None,
                 mask = masks[country]
                 if not bool(mask.any()):
                     continue
-                tas_series = _country_series(tas_ens, mask)
+                tas_series = country_series(tas_ens, mask)
                 country_baseline = float(
                     tas_series.sel(time=BASELINE_SLICE).mean('time'))
                 anom_dec = np.array(
-                    [_decadal_mean(tas_series, d) - country_baseline
+                    [decadal_mean(tas_series, d) - country_baseline
                      for d in DECADES])
                 tas_anomaly[mi, si, ci, :] = anom_dec
                 amoc_weak_pct[mi, si, ci, :] = weak_dec
@@ -410,12 +446,21 @@ def plot_cmip_cooling_trajectories(ds=None, save=True, plot_bg='white'):
             key = (str(mname), str(sce))
             if key not in cache:
                 print(f"Loading {mname} {sce} for trajectory plot...")
-                tas_rea = _list_realisations(sce, 'tas', [str(mname)])[str(mname)]
-                amoc_rea = _list_realisations(sce, 'amoc', [str(mname)])[str(mname)]
+                tas_rea = list_realisations(sce, 'tas', [str(mname)])[str(mname)]
+                amoc_rea = list_realisations(sce, 'amoc', [str(mname)])[str(mname)]
                 common = sorted(set(tas_rea) & set(amoc_rea))
-                tas_ens, _ = _ens_mean_concat(str(mname), str(sce), common, 'tas')
+                tas_ens, tas_used = ens_mean_concat(str(mname), str(sce), common, 'tas')
                 if tas_ens is None:
                     continue
+                # Same tas/amoc member re-intersection as make_cmip_cooling_ds,
+                # so trajectories use the identical member set as the onset
+                # markers overlaid on them (bites for MRI: tas hist 5 vs amoc 4).
+                _, amoc_used = ens_mean_concat(str(mname), str(sce), common, 'amoc')
+                if amoc_used is not None and set(tas_used) != set(amoc_used):
+                    used = sorted(set(tas_used) & set(amoc_used))
+                    if not used:
+                        continue
+                    tas_ens, tas_used = ens_mean_concat(str(mname), str(sce), used, 'tas')
                 cmasks = functions.make_country_masks_land_aware(
                     tas_ens.to_dataset(name='tas'),
                     include_ipcc_regions=False, verbose=False)
@@ -427,7 +472,7 @@ def plot_cmip_cooling_trajectories(ds=None, save=True, plot_bg='white'):
                 mask = cmasks.get(str(c))
                 if mask is None or not bool(mask.any()):
                     continue
-                series = _country_series(tas_ens, mask)
+                series = country_series(tas_ens, mask)
                 baseline = float(series.sel(time=BASELINE_SLICE).mean('time'))
                 rolling = series.rolling(time=rolling_window, center=True).mean()
                 anom = (rolling - baseline).values

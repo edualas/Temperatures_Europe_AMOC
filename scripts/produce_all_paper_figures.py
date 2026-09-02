@@ -38,12 +38,16 @@ import cmip_cooling, FigSupp_cmip_cooling as supp_cmip_cooling # type: ignore
 import FigSupp_warming_at_weakening as supp_warming_weak # type: ignore
 import FigSupp_warming_uncertainty as supp_warm_unc # type: ignore
 import FigSupp_scaling_factor_correlations as supp_scaling_corr # type: ignore
+import FigSupp_synthetic_scaling_factors as supp_synth_sf # type: ignore
+import FigSupp_mpi_intercept_comparison as supp_icpt_comp # type: ignore
+import FigSupp_cmip_range_statedep_robustness as supp_range_robustness # type: ignore
 
 for _mod in [functions, Fig1, Fig2, Fig3, Fig3_simple, supp_std_errors, supp_tas_anom,
              supp_reg_maps, supp_cesm_maps, supp_giss_maps, supp_giss_ts,
              supp_scenindep, supp_scenindep_cesm, supp_linearity_mpi,
              supp_linearity_other, supp_binary, cmip_cooling, supp_cmip_cooling,
-             supp_warming_weak, supp_warm_unc, supp_scaling_corr]:
+             supp_warming_weak, supp_warm_unc, supp_scaling_corr, supp_synth_sf,
+             supp_icpt_comp, supp_range_robustness]:
     importlib.reload(_mod)
 
 make_fig1 = Fig1.make_figure
@@ -65,6 +69,9 @@ make_cmip_cooling = supp_cmip_cooling.make_figure
 make_warming_weak = supp_warming_weak.make_figure
 make_warm_unc = supp_warm_unc.make_figure
 make_scaling_corr = supp_scaling_corr.make_figure
+make_synth_sf = supp_synth_sf.make_figure
+make_icpt_comp = supp_icpt_comp.make_figure
+make_range_robustness = supp_range_robustness.make_figure
 
 #%%
 ########################################
@@ -82,7 +89,13 @@ FUTURE_WINDOW_OVERRIDE = None
 # Each dataset is loaded once and shared across all figures that need it.
 
 print("Loading MPI-ESM data...")
-data_dict = functions.load_mpi_esm_data(eur_only=True)            # Fig1, tas_anom, linearity, scen-indep
+try:
+    data_dict = functions.load_mpi_esm_data(eur_only=True)        # Fig1, tas_anom, linearity, scen-indep
+except FileNotFoundError as e:
+    # off-Levante cache mirror: raw MPI-GE/ssphos fields not mirrored; the
+    # figures needing data_dict (Fig1 family) fail loudly at dispatch instead
+    print(f"WARNING: raw MPI-ESM data unavailable ({e}); data_dict = None")
+    data_dict = None
 
 print("Loading MPI-ESM regression dataset...")
 reg_ds_mpi = functions.load_regression_ds_mpi()                    # Fig2, Fig3, std_errors, reg_maps, binary
@@ -132,6 +145,41 @@ giss_ts_inputs = supp_giss_ts.load_inputs(season='')                     # giss_
 
 print("Loading CMIP-projected cooling dataset...")
 cmip_cooling_ds = cmip_cooling.make_cmip_cooling_ds(recompute=False)
+
+print("Loading CMIP6 target (w, t) for synthetic scaling factors...")
+wt_ds = supp_synth_sf.get_target_wt(recompute=False)
+
+# Per-country Synthetic CMIP6 range caches for Fig3/Fig3_simple panel e.
+# Three state-dependence treatments x four calibration configurations
+# (exclusions compose with the hosing default since 2026-08-31, so each
+# variant differs from the default by one knob; predictors default to 'w'
+# since 2026-09-01).
+# The cache is cache-only here (build via the FigSupp script's BUILD RANGE
+# CACHE cell), and a missing one raises rather than silently rendering cr-off.
+print("Loading Synthetic CMIP6 range caches...")
+CMIP_RANGE_CALS = ('hosing', 'full', 'nocesm2', 'consistentssp')
+cmip_range_ds = {
+    (sd, cs, ''): supp_synth_sf.get_cmip_range_ds(
+        recompute=False, state_dep=sd, cal_set=cs, verbose=False)
+    for sd in ('none', 'pooled', 'interact') for cs in CMIP_RANGE_CALS}
+# Seasonal siblings: the PI-calibrated base and the paper default only, at the
+# default calibration set. The seasonal state-dependence rests on the MPI,
+# CESM2 and GISS warm rows (the EC-Earth3 pair's BM diff fields are annual),
+# and 'loglin' has no seasonal form.
+cmip_range_ds.update({
+    (sd, 'hosing', se): supp_synth_sf.get_cmip_range_ds(
+        recompute=False, state_dep=sd, cal_set='hosing', season=se, verbose=False)
+    for sd in ('none', 'pooled') for se in ('djf', 'jja')})
+# wt-conditioning reference for the pooled default (pred-wt sibling; the
+# mirror of the pre-2026-09-01 pred-w sibling).
+cmip_range_ds_pred_wt = supp_synth_sf.get_cmip_range_ds(
+    recompute=False, state_dep='pooled', cal_set='hosing', predictors='wt',
+    verbose=False)
+# wt sibling of the 'none' treatment, for the state-dependence robustness
+# figure's second (wt) render.
+cmip_range_ds_none_pred_wt = supp_synth_sf.get_cmip_range_ds(
+    recompute=False, state_dep='none', cal_set='hosing', predictors='wt',
+    verbose=False)
 
 print("All data loaded.\n")
 
@@ -196,6 +244,27 @@ FIGURE_CONFIGS = {
             {'label': 'FigS (PD ref, JJA)',  'kwargs': {'season': 'jja', 'T_ref': 'pd'}},
             {'label': 'Fig3 (markers)',      'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': True}},
             {'label': 'Fig3 (CMIP cooling)', 'kwargs': {'season': '', 'T_ref': 'pi', 'cmip_cooling_show': True}},
+            # Fig3 is supplementary now (Fig3_simple is the paper figure), so it
+            # follows every behaviour change but carries a minimal variant set.
+            # vwb is on by default; one vwb-off render is kept for verification.
+            {'label': 'Fig3 (no vwb, verification)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'vwb_data': False}},
+            # Range variants mirroring the paper figure's default (pooled,
+            # hosing, w): annual plus the two seasonal siblings consumed by
+            # the manuscript's fig3-old-djf/jja. The 3x4 sweep lives on
+            # Fig3_simple.
+            {'label': 'Fig3 (range pooled)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'cmip_range_show': True,
+                        'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', '')],
+                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing'}},
+            {'label': 'Fig3 (range pooled, DJF)',
+             'kwargs': {'season': 'djf', 'T_ref': 'pi', 'cmip_range_show': True,
+                        'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', 'djf')],
+                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing'}},
+            {'label': 'Fig3 (range pooled, JJA)',
+             'kwargs': {'season': 'jja', 'T_ref': 'pi', 'cmip_range_show': True,
+                        'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', 'jja')],
+                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing'}},
         ],
     },
     'Fig3_simple': {
@@ -209,18 +278,121 @@ FIGURE_CONFIGS = {
             'cmip_cooling_ds': cmip_cooling_ds,
         },
         'variants': [
+            # The paper figure: the Synthetic CMIP6 range is on by default
+            # (pooled correction, hosing calibration, w predictors). T_ref='pd'
+            # variants cannot carry the range (the renderer defines it for the
+            # PI-referenced panel only) and are explicit cr-off.
             {'label': 'Fig3_simple',
-             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct'}},
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct',
+                        'cmip_range_show': True, 'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', '')],
+                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing'}},
             {'label': 'Fig3_simple',
-             'kwargs': {'season': '', 'T_ref': 'pd', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct'}},
+             'kwargs': {'season': '', 'T_ref': 'pd', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': False}},
             {'label': 'Fig3_simple',
-             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': True, 'aggregate_first': True, 'weakening_unit': 'pct'}},
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': True, 'aggregate_first': True, 'weakening_unit': 'pct',
+                        'cmip_range_show': True, 'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', '')],
+                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing'}},
             {'label': 'Fig3_simple',
-             'kwargs': {'season': 'djf', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct'}},
+             'kwargs': {'season': 'djf', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct',
+                        'cmip_range_show': True, 'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', 'djf')],
+                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing'}},
             {'label': 'Fig3_simple',
-             'kwargs': {'season': 'jja', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct'}},
+             'kwargs': {'season': 'jja', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct',
+                        'cmip_range_show': True, 'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', 'jja')],
+                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing'}},
             {'label': 'Fig3_simple',
-             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct'}},
+             'kwargs': {'season': 'djf', 'T_ref': 'pd', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': False}},
+            {'label': 'Fig3_simple',
+             'kwargs': {'season': 'jja', 'T_ref': 'pd', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': False}},
+            # Explicit range-off render: regression anchor (nothing outside the
+            # range branch may move) and the clean panel-b look.
+            {'label': 'Fig3_simple (range off)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': False}},
+            # Appendix/internal: original NAHosMIP min-max hatched on top.
+            {'label': 'Fig3_simple (NAHosMIP overlay)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct',
+                        'cmip_range_show': True, 'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', '')],
+                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing',
+                        'nahosmip_overlay': True}},
+            # wt-conditioning reference: the pooled default on the pred-wt
+            # sibling cache, with the NAHosMIP overlay (appendix/internal).
+            {'label': 'Fig3_simple (wt, NAHosMIP overlay)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct',
+                        'cmip_range_show': True, 'cmip_range_ds': cmip_range_ds_pred_wt,
+                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing',
+                        'cmip_range_predictors': 'wt', 'nahosmip_overlay': True}},
+            # vwb is on by default; one vwb-off render is kept for verification
+            # (range off to keep the anchor minimal).
+            {'label': 'Fig3_simple (no vwb, verification)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'vwb_data': False, 'cmip_range_show': False}},
+            {'label': 'Fig3_simple (CMIP cooling)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_cooling_show': True, 'cmip_range_show': False}},
+            {'label': 'Fig3_simple (aggregate last)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': False, 'weakening_unit': 'pct', 'cmip_range_show': False}},
+            # Synthetic CMIP6 range sweep: 3 state-dependence treatments x 4
+            # calibration configurations, minus the default (pooled, hosing)
+            # which is the first variant above. 'none' is the PI-calibrated
+            # base, 'pooled' the proportional restriction, 'interact' the
+            # unrestricted warm line (its PI side is the PI-only OLS).
+            # Exclusion sets compose with the hosing default (2026-08-31), so
+            # each variant differs from the default by exactly one knob.
+            {'label': 'Fig3_simple (range none)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': True,
+                        'cmip_range_ds': cmip_range_ds[('none', 'full', '')],
+                        'cmip_range_statedep': 'none', 'cmip_range_calset': 'full'}},
+            {'label': 'Fig3_simple (range none, nocesm2)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': True,
+                        'cmip_range_ds': cmip_range_ds[('none', 'nocesm2', '')],
+                        'cmip_range_statedep': 'none', 'cmip_range_calset': 'nocesm2'}},
+            {'label': 'Fig3_simple (range none, hosing)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': True,
+                        'cmip_range_ds': cmip_range_ds[('none', 'hosing', '')],
+                        'cmip_range_statedep': 'none', 'cmip_range_calset': 'hosing'}},
+            {'label': 'Fig3_simple (range none, consistentssp)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': True,
+                        'cmip_range_ds': cmip_range_ds[('none', 'consistentssp', '')],
+                        'cmip_range_statedep': 'none', 'cmip_range_calset': 'consistentssp'}},
+            {'label': 'Fig3_simple (range pooled)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': True,
+                        'cmip_range_ds': cmip_range_ds[('pooled', 'full', '')],
+                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'full'}},
+            {'label': 'Fig3_simple (range pooled, nocesm2)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': True,
+                        'cmip_range_ds': cmip_range_ds[('pooled', 'nocesm2', '')],
+                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'nocesm2'}},
+            {'label': 'Fig3_simple (range pooled, consistentssp)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': True,
+                        'cmip_range_ds': cmip_range_ds[('pooled', 'consistentssp', '')],
+                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'consistentssp'}},
+            {'label': 'Fig3_simple (range interact)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': True,
+                        'cmip_range_ds': cmip_range_ds[('interact', 'full', '')],
+                        'cmip_range_statedep': 'interact', 'cmip_range_calset': 'full'}},
+            {'label': 'Fig3_simple (range interact, nocesm2)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': True,
+                        'cmip_range_ds': cmip_range_ds[('interact', 'nocesm2', '')],
+                        'cmip_range_statedep': 'interact', 'cmip_range_calset': 'nocesm2'}},
+            {'label': 'Fig3_simple (range interact, hosing)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': True,
+                        'cmip_range_ds': cmip_range_ds[('interact', 'hosing', '')],
+                        'cmip_range_statedep': 'interact', 'cmip_range_calset': 'hosing'}},
+            {'label': 'Fig3_simple (range interact, consistentssp)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': True,
+                        'cmip_range_ds': cmip_range_ds[('interact', 'consistentssp', '')],
+                        'cmip_range_statedep': 'interact', 'cmip_range_calset': 'consistentssp'}},
+            # Seasonal PI-calibrated base ranges at the default calibration
+            # set (the seasonal paper defaults with the pooled range are the
+            # plain seasonal variants above). Warming side is seasonal
+            # throughout; the weakening side stays annual (no seasonal AMOC
+            # at 26N).
+            {'label': 'Fig3_simple (range none, DJF)',
+             'kwargs': {'season': 'djf', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': True,
+                        'cmip_range_ds': cmip_range_ds[('none', 'hosing', 'djf')],
+                        'cmip_range_statedep': 'none', 'cmip_range_calset': 'hosing'}},
+            {'label': 'Fig3_simple (range none, JJA)',
+             'kwargs': {'season': 'jja', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': True,
+                        'cmip_range_ds': cmip_range_ds[('none', 'hosing', 'jja')],
+                        'cmip_range_statedep': 'none', 'cmip_range_calset': 'hosing'}},
         ],
     },
     'FigSupp_mpi_std_errors': {
@@ -243,6 +415,7 @@ FIGURE_CONFIGS = {
             'multi_model_dict': multi_model_dict, 'masks': masks,
             'reg_ds_mpi': reg_ds_mpi, 'reg_ds_cesm': reg_ds_cesm,
             'hosmip_reg_ds_dict': hosmip_reg_ds_dict,
+            'reg_ds_giss': reg_ds_giss,
         },
         'variants': [
             {'label': 'FigSupp_multimodel_regression_maps (annual)',  'kwargs': {'season': '', 'plot_ste': False}},
@@ -338,9 +511,19 @@ FIGURE_CONFIGS = {
             'reg_ds_mpi': reg_ds_mpi, 'reg_ds_cesm': reg_ds_cesm, 'masks': masks,
             'hosmip_reg_ds_dict': hosmip_reg_ds_dict, 'reg_ds_giss': reg_ds_giss,
         },
+        # Since 2026-09-01 the panels carry the Synthetic CMIP6 range of dT
+        # at each weakening level (schema-v3 dT_* vars, Fig3-default pooled/
+        # hosing/w spec, season-matched) instead of the NAHosMIP min-max bar.
         'variants': [
             {'label': 'FigSupp_warming_at_weakening',
-             'kwargs': {'weakenings': (25.0, 75.0), 'season': '', 'T_ref': 'pi'}},
+             'kwargs': {'weakenings': (25.0, 75.0), 'season': '', 'T_ref': 'pi',
+                        'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', '')]}},
+            {'label': 'FigSupp_warming_at_weakening (DJF)',
+             'kwargs': {'weakenings': (25.0, 75.0), 'season': 'djf', 'T_ref': 'pi',
+                        'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', 'djf')]}},
+            {'label': 'FigSupp_warming_at_weakening (JJA)',
+             'kwargs': {'weakenings': (25.0, 75.0), 'season': 'jja', 'T_ref': 'pi',
+                        'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', 'jja')]}},
         ],
     },
     'FigSupp_warming_uncertainty': {
@@ -367,6 +550,142 @@ FIGURE_CONFIGS = {
         'variants': [
             {'label': 'FigSupp_scaling_factor_correlations',
              'kwargs': {'x_axis': 'combined', 'baseline': 'hist_1850_1899'}},
+        ],
+    },
+    'FigSupp_synthetic_scaling_factors': {
+        'function': make_synth_sf,
+        'data_args': {
+            'wt_ds': wt_ds,
+            'multi_model_dict': multi_model_dict, 'masks': masks,
+            'hosmip_reg_ds_dict': hosmip_reg_ds_dict,
+            'reg_ds_giss': reg_ds_giss, 'reg_ds_giss_panel': reg_ds_giss_panel,
+            'gwl_data': gwl_data,
+            # Needed by the sdep-pooled variants below, and supplied to every
+            # other variant so the sidecar's state-dependence block is populated
+            # in canonical renders too (state_dep defaults to 'none' there, so
+            # those figures are unaffected).
+            'reg_ds_mpi': reg_ds_mpi, 'reg_ds_cesm': reg_ds_cesm,
+        },
+        'variants': [
+            # Mirrors the Fig3 range sweep's calibration sets, each with both
+            # predictor specs: the w default (since 2026-09-01) and the wt
+            # sibling. cal_set='hosing' default since 2026-08-31; exclusion
+            # sets compose with the hosing default, and 'full' adds GISS back.
+            {'label': 'FigSupp_synthetic_scaling_factors',
+             'kwargs': {}},
+            {'label': 'FigSupp_synthetic_scaling_factors (wt)',
+             'kwargs': {'predictors': 'wt'}},
+            {'label': 'FigSupp_synthetic_scaling_factors (full)',
+             'kwargs': {'cal_set': 'full'}},
+            {'label': 'FigSupp_synthetic_scaling_factors (full, wt)',
+             'kwargs': {'cal_set': 'full', 'predictors': 'wt'}},
+            {'label': 'FigSupp_synthetic_scaling_factors (no CESM2)',
+             'kwargs': {'cal_set': 'nocesm2'}},
+            {'label': 'FigSupp_synthetic_scaling_factors (no CESM2, wt)',
+             'kwargs': {'cal_set': 'nocesm2', 'predictors': 'wt'}},
+            {'label': 'FigSupp_synthetic_scaling_factors (consistent SSPs)',
+             'kwargs': {'cal_set': 'consistentssp'}},
+            {'label': 'FigSupp_synthetic_scaling_factors (consistent SSPs, wt)',
+             'kwargs': {'cal_set': 'consistentssp', 'predictors': 'wt'}},
+            # Seasonal siblings at the default calibration set (2026-08-23;
+            # re-pointed to the hosing default 2026-08-31). The cal_set
+            # sensitivities stay annual; season and calibration set are
+            # independent axes and the seasonal question is about the fit, not
+            # about which models are in it.
+            {'label': 'FigSupp_synthetic_scaling_factors (DJF)',
+             'kwargs': {'season': 'djf'}},
+            {'label': 'FigSupp_synthetic_scaling_factors (DJF, wt)',
+             'kwargs': {'predictors': 'wt', 'season': 'djf'}},
+            {'label': 'FigSupp_synthetic_scaling_factors (JJA)',
+             'kwargs': {'season': 'jja'}},
+            {'label': 'FigSupp_synthetic_scaling_factors (JJA, wt)',
+             'kwargs': {'predictors': 'wt', 'season': 'jja'}},
+            # State-dependence: the targets are predicted on the fitted warm
+            # line, so the Boot (CESM2) and BM (EC-Earth3) warm slopes reach the
+            # plotted panels rather than only the sidecar. 'pooled' at the
+            # default calibration set is the treatment Fig3 defaults to, so the
+            # annual variant below is the counterpart of the paper figure; the
+            # seasonal fits have three warm observations (MPI, CESM2, GISS)
+            # against four annually, EC-Earth3's BM diff fields being
+            # annual-only.
+            {'label': 'FigSupp_synthetic_scaling_factors (pooled)',
+             'kwargs': {'state_dep': 'pooled'}},
+            {'label': 'FigSupp_synthetic_scaling_factors (pooled, wt)',
+             'kwargs': {'predictors': 'wt', 'state_dep': 'pooled'}},
+            {'label': 'FigSupp_synthetic_scaling_factors (DJF, pooled)',
+             'kwargs': {'season': 'djf', 'state_dep': 'pooled'}},
+            {'label': 'FigSupp_synthetic_scaling_factors (JJA, pooled)',
+             'kwargs': {'season': 'jja', 'state_dep': 'pooled'}},
+        ],
+    },
+    # Stacked three-version comparison (2026-08-31): hosing/w, nocesm2/w,
+    # hosing/wt, all state_dep='none'; full a+b row per version. EU + IE per
+    # the standing between-version comparison convention.
+    'FigSupp_synthetic_scaling_factors_stack': {
+        'function': supp_synth_sf.make_stacked_figure,
+        'data_args': {
+            'wt_ds': wt_ds,
+            'multi_model_dict': multi_model_dict, 'masks': masks,
+            'hosmip_reg_ds_dict': hosmip_reg_ds_dict,
+            'reg_ds_giss': reg_ds_giss, 'reg_ds_giss_panel': reg_ds_giss_panel,
+            'gwl_data': gwl_data,
+            'reg_ds_mpi': reg_ds_mpi, 'reg_ds_cesm': reg_ds_cesm,
+        },
+        'variants': [
+            {'label': 'FigSupp_synthetic_scaling_factors_stack',
+             'kwargs': {}},
+            {'label': 'FigSupp_synthetic_scaling_factors_stack (IE)',
+             'kwargs': {'region': 'IE'}},
+            # Same 3-row stack, state-dependence-corrected instead of 'none'
+            # (EU + IE per the standing between-version comparison convention).
+            {'label': 'FigSupp_synthetic_scaling_factors_stack (pooled)',
+             'kwargs': {'state_dep': 'pooled'}},
+            {'label': 'FigSupp_synthetic_scaling_factors_stack (pooled, IE)',
+             'kwargs': {'state_dep': 'pooled', 'region': 'IE'}},
+        ],
+    },
+    'FigSupp_mpi_intercept_comparison': {
+        'function': make_icpt_comp,
+        'data_args': {'data_dict': data_dict},
+        'variants': [
+            {'label': 'FigSupp_mpi_intercept_comparison', 'kwargs': {'season': '', 'window': 10, 'hosing': 'all'}},
+            # PT has the largest free-intercept of the 34 countries >= ~30k km2
+            # (-0.147 degC vs -0.036 for EU), so the two conventions differ most there;
+            # its spread needs the wider ylim.
+            {'label': 'FigSupp_mpi_intercept_comparison (PT)',
+             'kwargs': {'season': '', 'window': 10, 'hosing': 'all', 'region': 'PT', 'ylim': (-2.0, 1.0)}},
+        ],
+    },
+    # Two 2-panel robustness checks for the Synthetic CMIP6 range (split from
+    # one 3-panel figure 2026-09-01 for legibility): version='statedep' is
+    # no correction vs pooled correction (both 'medians'); version='mode' is
+    # 'medians' vs 'mc' display without correction. cmip_range_mode is a
+    # render-time selector only, so the 'mode' variants reuse one loaded
+    # cmip_range_ds (see FigSupp_cmip_range_statedep_robustness.py's LOAD
+    # DATA cell / docstring). Each version renders for w and the wt sibling.
+    'FigSupp_cmip_range_statedep_robustness': {
+        'function': make_range_robustness,
+        'data_args': {
+            'reg_ds_mpi': reg_ds_mpi, 'reg_ds_cesm': reg_ds_cesm, 'masks': masks,
+            'hosmip_reg_ds_dict': hosmip_reg_ds_dict, 'reg_ds_giss': reg_ds_giss,
+        },
+        'variants': [
+            {'label': 'FigSupp_cmip_range_statedep_robustness',
+             'kwargs': {'cmip_range_ds_none': cmip_range_ds[('none', 'hosing', '')],
+                        'cmip_range_ds_pooled': cmip_range_ds[('pooled', 'hosing', '')],
+                        'cmip_range_predictors': 'w', 'version': 'statedep'}},
+            {'label': 'FigSupp_cmip_range_statedep_robustness (wt)',
+             'kwargs': {'cmip_range_ds_none': cmip_range_ds_none_pred_wt,
+                        'cmip_range_ds_pooled': cmip_range_ds_pred_wt,
+                        'cmip_range_predictors': 'wt', 'version': 'statedep'}},
+            {'label': 'FigSupp_cmip_range_mode_robustness',
+             'kwargs': {'cmip_range_ds_none': cmip_range_ds[('none', 'hosing', '')],
+                        'cmip_range_ds_pooled': cmip_range_ds[('pooled', 'hosing', '')],
+                        'cmip_range_predictors': 'w', 'version': 'mode'}},
+            {'label': 'FigSupp_cmip_range_mode_robustness (wt)',
+             'kwargs': {'cmip_range_ds_none': cmip_range_ds_none_pred_wt,
+                        'cmip_range_ds_pooled': cmip_range_ds_pred_wt,
+                        'cmip_range_predictors': 'wt', 'version': 'mode'}},
         ],
     },
 }

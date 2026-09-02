@@ -7,8 +7,9 @@
 # Math (per pixel, per model, per scenario):
 #   delta_T(w) = (T_2090 - T_pi) + m * (w - w_2090)
 # with m in K per %-weakening. Per-model unit handling lives in
-# `_slope_pct(...)` below.
+# `slope_pct(...)` below.
 
+import colorsys
 import importlib
 import numpy as np
 import matplotlib.pyplot as plt
@@ -22,7 +23,7 @@ import functions
 importlib.reload(functions)
 
 
-def _slope_pct(coef, model_amoc_pi, slope_units):
+def slope_pct(coef, model_amoc_pi, slope_units):
     """Return regression slope in K per %-weakening.
 
     `slope_units='K_per_Sv'`  → multiply by -model_amoc_pi/100.
@@ -37,7 +38,7 @@ def _slope_pct(coef, model_amoc_pi, slope_units):
     raise ValueError(f"unknown slope_units: {slope_units!r}")
 
 
-def _w_2090(amoc_2090, amoc_pi):
+def weakening_2090(amoc_2090, amoc_pi):
     """Projected 2090-2100 AMOC weakening in % of model PI."""
     return (amoc_pi - amoc_2090) / amoc_pi * 100.0
 
@@ -53,6 +54,7 @@ def make_figure(reg_ds_mpi, reg_ds_cesm, masks,
                 T_ref='pi', season='',
                 hosmip_markers=False,
                 reg_ds_giss=None, giss_time_period='2101-2300',
+                cmip_range_ds=None,
                 plot_bg='white', ext_ax=None, title=True, savefig=False):
     plt.style.use('default')
     if plot_bg == 'black':
@@ -67,6 +69,20 @@ def make_figure(reg_ds_mpi, reg_ds_cesm, masks,
 
     if T_ref not in ('pi', 'pd'):
         raise NotImplementedError("Only T_ref='pi' and T_ref='pd' are implemented.")
+
+    # cmip_range_ds (schema v3) replaces the NAHosMIP min-max bar with the
+    # Synthetic CMIP6 range of dT at the panel's fixed weakening level. Its
+    # dT_* vars are anchored to the PI baseline and stored only at the
+    # DT_W_LEVELS levels, so both must match the panel.
+    if cmip_range_ds is not None:
+        if T_ref != 'pi':
+            raise NotImplementedError("cmip_range_ds requires T_ref='pi'")
+        _cr_season = cmip_range_ds.attrs.get('season', '')
+        if _cr_season != season:
+            raise ValueError(f"cmip_range_ds is season={_cr_season!r}, panel is season={season!r}")
+        _levels = [float(v) for v in cmip_range_ds.w_level.values]
+        if float(amoc_weakening_pct) not in _levels:
+            raise ValueError(f"cmip_range_ds has w_level={_levels}, panel is at {amoc_weakening_pct}")
 
     if reg_ds_giss is not None:
         reg_ds_giss_sel = reg_ds_giss.sel(time_period=giss_time_period)
@@ -89,14 +105,17 @@ def make_figure(reg_ds_mpi, reg_ds_cesm, masks,
                                  linestyle='None', markersize=8))
     legend_labels.append('MPI-ESM1.2-LR (this study)')
 
-    if season == '':
-        legend_handles.append(Line2D([], [], marker='d', color=legend_color,
-                                     linestyle='None', markersize=5))
-        legend_labels.append('CESM2 (Boot et al. 2024)')
+    # CESM2 is season-independent since 2026-08-17: reg_ds_cesm carries a
+    # season dim built from Boot's monthly TREFHT, so the diamond and the
+    # combined-forcing bar render in seasonal panels too (the guards that
+    # skipped them are gone).
+    legend_handles.append(Line2D([], [], marker='d', color=legend_color,
+                                 linestyle='None', markersize=5))
+    legend_labels.append('CESM2 (Boot et al. 2024)')
 
-        legend_handles.append(Line2D([], [], color=legend_color, alpha=bar_alpha,
-                                     linewidth=5, solid_capstyle='butt'))
-        legend_labels.append('Combined forcing range (MPI-ESM1.2-LR & CESM2)')
+    legend_handles.append(Line2D([], [], color=legend_color, alpha=bar_alpha,
+                                 linewidth=5, solid_capstyle='butt'))
+    legend_labels.append('Combined forcing range (MPI-ESM1.2-LR & CESM2)')
 
     if reg_ds_giss is not None:
         legend_handles.append(Line2D([], [], marker='o', color=legend_color,
@@ -104,10 +123,25 @@ def make_figure(reg_ds_mpi, reg_ds_cesm, masks,
         legend_labels.append(
             f'GISS-E2-1-G (Romanou et al. 2023, {giss_time_period} fit)')
 
-    hosmip_bar_h = Line2D([], [], color=legend_color, alpha=0.3,
-                          linewidth=5, solid_capstyle='butt')
-    legend_handles.append(hosmip_bar_h)
-    legend_labels.append('Preindustrial hosing range (NAHosMIP models)')
+    # Same legend recipe as the cmip_range branch of
+    # functions.plot_net_cooling_ranges_mpi_cesm (medians display only): IQR
+    # swatch, median tick over an IQR swatch (tuple handle, HandlerTuple in
+    # the ax.legend call), faint full extent.
+    _MEDIAN_TICK_PT = 2 * np.sqrt(40 / np.pi)
+    if cmip_range_ds is None:
+        hosmip_bar_h = Line2D([], [], color=legend_color, alpha=0.3,
+                              linewidth=5, solid_capstyle='butt')
+        legend_handles.append(hosmip_bar_h)
+        legend_labels.append('Preindustrial hosing range (NAHosMIP models)')
+    else:
+        _iqr_h = Line2D([], [], color=legend_color, alpha=0.48, linewidth=5, solid_capstyle='butt')
+        _med_h = (Line2D([], [], color=legend_color, alpha=0.48, linewidth=5, solid_capstyle='butt'),
+                  Line2D([], [], color=legend_color, marker='|', markersize=_MEDIAN_TICK_PT,
+                         markeredgewidth=2.2, linestyle='None'))
+        _full_h = Line2D([], [], color=legend_color, alpha=0.22, linewidth=5, solid_capstyle='butt')
+        legend_handles += [_iqr_h, _med_h, _full_h]
+        legend_labels += ['Synthetic CMIP6 range (IQR)', 'Synthetic CMIP6 range (median)',
+                          'Full synthetic CMIP6 range']
 
     if hosmip_markers:
         for mkr, sz, lbl in [
@@ -141,22 +175,22 @@ def make_figure(reg_ds_mpi, reg_ds_cesm, masks,
 
         if model_kind == 'mpi':
             w2090 = functions.convert_strength_to_weakening(amoc_2090)
-            m_pct = _slope_pct(_strip_season(reg_ds.coef_ensmean),
+            m_pct = slope_pct(_strip_season(reg_ds.coef_ensmean),
                                functions.AMOC_pi_MPI, 'K_per_Sv')
         elif model_kind == 'cesm':
-            w2090 = _w_2090(amoc_2090, reg_ds.AMOC_pi)
-            m_pct = _slope_pct(_strip_season(reg_ds.coef_ensmean),
+            w2090 = weakening_2090(amoc_2090, reg_ds.AMOC_pi)
+            m_pct = slope_pct(_strip_season(reg_ds.coef_ensmean),
                                None, 'K_per_pct')
         elif model_kind == 'hosmip':
-            w2090 = _w_2090(amoc_2090, reg_ds.AMOC_pi)
-            # Mirror functions.py:3039's sign filter so we project only
-            # along cooling-with-weakening fits (consistent contributing
-            # pixel set with the original net-cooling figure).
-            lin = reg_ds.lin_coef_hosmip.where(reg_ds.lin_coef_hosmip < 0)
-            m_pct = _slope_pct(_strip_season(lin), None, 'K_per_pct')
+            w2090 = weakening_2090(amoc_2090, reg_ds.AMOC_pi)
+            # Unfiltered slope, symmetric with the mpi/cesm/giss kinds: the
+            # linear ΔT projection is defined for any slope sign (no 1/slope
+            # inversion here). The <0 filter belongs to the per-pixel req
+            # fields only — removed 2026-08-15 (e).
+            m_pct = slope_pct(_strip_season(reg_ds.lin_coef_hosmip), None, 'K_per_pct')
         elif model_kind == 'giss':
-            w2090 = _w_2090(amoc_2090, functions.AMOC_pi_GISS)
-            m_pct = _slope_pct(_strip_season(reg_ds.coef_ensmean),
+            w2090 = weakening_2090(amoc_2090, functions.AMOC_pi_GISS)
+            m_pct = slope_pct(_strip_season(reg_ds.coef_ensmean),
                                functions.AMOC_pi_GISS, 'K_per_Sv')
         else:
             raise ValueError(model_kind)
@@ -177,32 +211,59 @@ def make_figure(reg_ds_mpi, reg_ds_cesm, masks,
             cesm_value = _country_value(cesm_field, 'CESM2',         r)
 
             hosmip_values = []
-            for model in functions.hosmip_labels:
-                h_field = _delta_T_field(
-                    hosmip_reg_ds_dict[model], ssp_i, model_kind='hosmip')
-                h_val = _country_value(h_field, model, r)
-                hosmip_values.append(h_val)
+            if hosmip_markers or cmip_range_ds is None:
+                for model in functions.hosmip_labels:
+                    h_field = _delta_T_field(
+                        hosmip_reg_ds_dict[model], ssp_i, model_kind='hosmip')
+                    h_val = _country_value(h_field, model, r)
+                    hosmip_values.append(h_val)
 
-                if hosmip_markers:
-                    mk = {'MPI-ESM1-2-LR':'*','MPI-ESM1-2-HR':'^','CESM2':'d',
-                          'HadGEM3-GC3-1MM':'<','HadGEM3-GC3-1LL':'>',
-                          'EC-Earth3':'v','CanESM5':'X','IPSL-CM6A-LR':'P'
-                          }.get(model, '')
-                    ax.scatter(h_val,
-                               group_centers[i] + vertical_offsets[ssp_i] * bar_height,
-                               alpha=bar_alpha, color=functions.hosing_colors[ssp_i]['ge'],
-                               marker=mk, s=10, clip_on=True)
+                    if hosmip_markers:
+                        mk = {'MPI-ESM1-2-LR':'*','MPI-ESM1-2-HR':'^','CESM2':'d',
+                              'HadGEM3-GC3-1MM':'<','HadGEM3-GC3-1LL':'>',
+                              'EC-Earth3':'v','CanESM5':'X','IPSL-CM6A-LR':'P'
+                              }.get(model, '')
+                        ax.scatter(h_val,
+                                   group_centers[i] + vertical_offsets[ssp_i] * bar_height,
+                                   alpha=bar_alpha, color=functions.hosing_colors[ssp_i]['ge'],
+                                   marker=mk, s=10, clip_on=True)
 
-            # NAHosMIP min–max range (thin transparent bar)
-            if np.isfinite(np.nanmin(hosmip_values)) and np.isfinite(np.nanmax(hosmip_values)):
-                ax.barh(group_centers[i] - 0.01 + vertical_offsets[ssp_i] * bar_height,
-                        np.nanmax(hosmip_values) - np.nanmin(hosmip_values),
-                        left=np.nanmin(hosmip_values),
-                        height=bar_height * 0.8, alpha=0.3,
-                        color=functions.hosing_colors[ssp_i]['ge'], clip_on=True)
+            y_bar = group_centers[i] - 0.01 + vertical_offsets[ssp_i] * bar_height
+            if cmip_range_ds is None:
+                # NAHosMIP min–max range (thin transparent bar)
+                if np.isfinite(np.nanmin(hosmip_values)) and np.isfinite(np.nanmax(hosmip_values)):
+                    ax.barh(y_bar,
+                            np.nanmax(hosmip_values) - np.nanmin(hosmip_values),
+                            left=np.nanmin(hosmip_values),
+                            height=bar_height * 0.8, alpha=0.3,
+                            color=functions.hosing_colors[ssp_i]['ge'], clip_on=True)
+            else:
+                # Synthetic CMIP6 range of dT at the panel's weakening level:
+                # same three-layer rendering as Fig3's range (full extent
+                # alpha 0.22, IQR alpha 0.48, darkened '|' median tick) — no
+                # 100% cap here, the dT axis is unbounded on both sides.
+                cr = cmip_range_ds.sel(region=r, scenario=ssp_i,
+                                       w_level=float(amoc_weakening_pct))
+                lo_f, hi_f = float(cr.dT_min), float(cr.dT_max)
+                lo, hi, med = float(cr.dT_q25), float(cr.dT_q75), float(cr.dT_median)
+                if np.isfinite(lo_f) and np.isfinite(hi_f):
+                    ax.barh(y_bar, hi_f - lo_f, left=lo_f, height=bar_height * 0.8,
+                            alpha=0.22, color=functions.hosing_colors[ssp_i]['ge'],
+                            clip_on=True)
+                if np.isfinite(lo) and np.isfinite(hi):
+                    ax.barh(y_bar, hi - lo, left=lo, height=bar_height * 0.8,
+                            alpha=0.48, color=functions.hosing_colors[ssp_i]['ge'],
+                            clip_on=True)
+                if np.isfinite(med):
+                    _med_rgb = plt.matplotlib.colors.to_rgb(functions.hosing_colors[ssp_i]['ge'])
+                    _mh, _ml, _ms = colorsys.rgb_to_hls(*_med_rgb)
+                    _med_color = colorsys.hls_to_rgb(_mh, max(0, _ml * 0.7), min(1, _ms * 1.3))
+                    ax.plot(med, y_bar, marker='|', markersize=_MEDIAN_TICK_PT,
+                            markeredgewidth=2.2, color=_med_color, zorder=1.5,
+                            clip_on=True)
 
             # MPI–CESM combined forcing range (thicker, opaque)
-            if season == '' and np.isfinite(mpi_value) and np.isfinite(cesm_value):
+            if np.isfinite(mpi_value) and np.isfinite(cesm_value):
                 ax.barh(group_centers[i] - 0.01 + vertical_offsets[ssp_i] * bar_height,
                         mpi_value - cesm_value,
                         left=cesm_value,
@@ -213,11 +274,10 @@ def make_figure(reg_ds_mpi, reg_ds_cesm, masks,
                        group_centers[i] + vertical_offsets[ssp_i] * bar_height,
                        alpha=line_alpha, color=functions.hosing_colors[ssp_i]['ge'],
                        marker='*', s=50)
-            if season == '':
-                ax.scatter(cesm_value,
-                           group_centers[i] + vertical_offsets[ssp_i] * bar_height,
-                           alpha=line_alpha, color=functions.hosing_colors[ssp_i]['ge'],
-                           marker='d', s=25)
+            ax.scatter(cesm_value,
+                       group_centers[i] + vertical_offsets[ssp_i] * bar_height,
+                       alpha=line_alpha, color=functions.hosing_colors[ssp_i]['ge'],
+                       marker='d', s=25)
 
             if reg_ds_giss is not None:
                 giss_field = _delta_T_field(reg_ds_giss_sel, ssp_i, model_kind='giss')
@@ -298,9 +358,11 @@ def make_figure(reg_ds_mpi, reg_ds_cesm, masks,
     ax.spines['left'].set_visible(False)
     ax.spines['bottom'].set_position(('axes', 0.03))
 
+    from matplotlib.legend_handler import HandlerTuple
     ax.legend(legend_handles, legend_labels,
               frameon=True, bbox_to_anchor=(0.02, 0.055),
               loc='lower left', fontsize=10,
+              handler_map={tuple: HandlerTuple(ndivide=None)},
               title=('Annual' if season == '' else f'Seasonal ({season.upper()})')
                     + f' warming at {amoc_weakening_pct:.0f}% weakening',
               title_fontproperties={'weight': 'bold', 'size': 10})

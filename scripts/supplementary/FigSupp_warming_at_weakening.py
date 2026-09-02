@@ -14,6 +14,8 @@ import functions
 importlib.reload(functions)
 import plot_warming_at_amoc_weakening as pw # type: ignore
 importlib.reload(pw)
+import FigSupp_synthetic_scaling_factors as ssf  # type: ignore
+importlib.reload(ssf)
 
 ########################################
 # %%
@@ -22,8 +24,11 @@ importlib.reload(pw)
 # Two side-by-side panels of pw.make_figure (the flipped net-cooling figure):
 # per country, the end-of-century ΔT above 1850-1899 each (model, scenario)
 # line predicts at a chosen AMOC-weakening level. Left = 25 %, right = 75 %.
-# Layout mirrors FigSupp_cmip_cooling.py; per-panel legend (self-describing via
-# its weakening-% title) is intentional.
+# Since 2026-09-01 the panels carry the Synthetic CMIP6 range of ΔT at each
+# level (dT_* vars, range-cache schema v3) in place of the NAHosMIP min-max
+# bar; cmip_range_ds=None restores the old bar. Layout mirrors
+# FigSupp_cmip_cooling.py; per-panel legend (self-describing via its
+# weakening-% title) is intentional.
 
 ########################################
 # %%
@@ -35,6 +40,12 @@ if __name__ == '__main__':
     reg_ds_cesm = functions.get_cesm_reg_ds(recompute=False)
     reg_ds_giss = functions.get_giss_reg_ds(recompute=False, masks=masks)
     hosmip_reg_ds_dict = functions.get_hosmip_reg_ds(recompute=False)
+    # Fig3-default range spec (pooled, hosing, w); season-matched below.
+    cmip_range_ds_by_season = {
+        se: ssf.get_cmip_range_ds(recompute=False, state_dep='pooled',
+                                  cal_set='hosing', predictors='w', season=se)
+        for se in ('', 'djf', 'jja')
+    }
 
 
 ########################################
@@ -44,7 +55,7 @@ if __name__ == '__main__':
 def make_figure(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_ds_dict,
                 reg_ds_giss=None, weakenings=(25.0, 75.0),
                 T_ref='pi', season='', giss_time_period='2101-2300',
-                plot_bg='white'):
+                cmip_range_ds=None, plot_bg='white'):
     plt.style.use('default')
     plt.rcParams.update({'font.size': 12})
     if plot_bg == 'black':
@@ -64,6 +75,7 @@ def make_figure(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_ds_dict,
             hosmip_reg_ds_dict=hosmip_reg_ds_dict,
             amoc_weakening_pct=w, T_ref=T_ref, season=season,
             reg_ds_giss=reg_ds_giss, giss_time_period=giss_time_period,
+            cmip_range_ds=cmip_range_ds,
             plot_bg=plot_bg, ext_ax=ax, title=False, savefig=False)
         ax.text(0.0, 1.03, f'{chr(97 + i)}) End-of-century $\Delta \mathrm{{T}}$ at {w:.0f}% AMOC weakening',
                 transform=ax.transAxes, fontsize=14, fontweight='bold',
@@ -73,9 +85,10 @@ def make_figure(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_ds_dict,
     # the left panel's labels don't overrun the right panel (cf. FigSupp_cmip_cooling).
     fig.subplots_adjust(wspace=0.3)
 
+    cr_tag = '_cr-med' if cmip_range_ds is not None else '_cr-off'
     savepath = (f'../plots/FigSupp_warming_at_weakening_'
                 f'w-{"-".join(f"{w:.0f}" for w in weakenings)}'
-                f'_Tref-{T_ref}_season-{season or "annual"}_plotbg-{plot_bg}')
+                f'_Tref-{T_ref}_season-{season or "annual"}{cr_tag}_plotbg-{plot_bg}')
     fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
     fig.savefig(savepath + '.pdf', dpi=400, bbox_inches='tight',
@@ -89,9 +102,12 @@ def make_figure(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_ds_dict,
 
 if __name__ == '__main__':
     plot_bg = 'white'  # 'white' or 'black'
+    season = ''        # '' | 'djf' | 'jja'
     fig, savepath = make_figure(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_ds_dict,
                                 reg_ds_giss=reg_ds_giss, weakenings=(25.0, 75.0),
-                                season='', T_ref='pi', plot_bg=plot_bg)
+                                season=season, T_ref='pi',
+                                cmip_range_ds=cmip_range_ds_by_season[season],
+                                plot_bg=plot_bg)
     print(f"Saved {savepath}")
 
 # %%

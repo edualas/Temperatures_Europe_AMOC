@@ -15,6 +15,8 @@ import functions
 importlib.reload(functions)
 import cmip_cooling # type: ignore
 importlib.reload(cmip_cooling)
+import FigSupp_synthetic_scaling_factors as ssf  # type: ignore
+importlib.reload(ssf)
 
 ########################################
 # %%
@@ -40,6 +42,18 @@ if __name__ == '__main__':
     }
     hosmip_reg_ds_dict = functions.get_hosmip_reg_ds(recompute=False)
     cmip_cooling_ds = cmip_cooling.make_cmip_cooling_ds(recompute=False)
+    # Per-country Synthetic CMIP6 ranges (direct + rescaled + synthetic
+    # cooling sensitivities); cache-only load — build via the FigSupp script.
+    # Mirrors Fig3_simple's LOAD DATA cell.
+    cmip_range_statedep = 'pooled'    # 'none' | 'dummy' | 'pooled' | 'loglin'
+    cmip_range_calset = 'hosing'      # 'hosing' (default)|'full'|'nocesm2'|'consistentssp'
+    cmip_range_predictors = 'w'       # 'w' (default) | 'wt'
+    cmip_range_season = ''            # must match the RUN cell's season
+    cmip_range_ds = ssf.get_cmip_range_ds(recompute=False,
+                                          state_dep=cmip_range_statedep,
+                                          cal_set=cmip_range_calset,
+                                          predictors=cmip_range_predictors,
+                                          season=cmip_range_season)
 
 ########################################
 #%%
@@ -53,8 +67,21 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
                 reg_ds_giss=None, giss_time_period='2101-2300',
                 giss_panel_data=None, cmip_cooling_ds=None,
                 cmip_cooling_show=False, aggregate_first=True, weakening_unit='pct',
-                future_window=None):
+                future_window=None,
+                cmip_range_ds=None, cmip_range_show=True, cmip_range_mode='medians',
+                cmip_range_statedep='pooled', cmip_range_calset='hosing',
+                cmip_range_predictors='w', nahosmip_overlay=False,
+                vwb_data=True):
     plt.style.use('default')
+    # F9 (2026-08-31): the filename tags must describe the dataset actually
+    # drawn (mirrors Fig3_simple).
+    if cmip_range_ds is not None and cmip_range_show:
+        for _attr, _want in (('state_dep', cmip_range_statedep),
+                             ('cal_set', cmip_range_calset),
+                             ('predictors', cmip_range_predictors)):
+            assert cmip_range_ds.attrs.get(_attr) == _want, (
+                f"cmip_range_ds has {_attr}={cmip_range_ds.attrs.get(_attr)!r} "
+                f"but the tag kwargs say {_want!r}")
     # plt.rcParams.update({'font.size': 12})
     # Sv-axis extents (only used when weakening_unit='sv'). Panel e extends to the
     # strongest model's PI (rounded up to a multiple of 5); each model's
@@ -105,8 +132,10 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
         giss_panel_for_season = giss_panel_data.get(season)
     else:
         giss_panel_for_season = giss_panel_data
+    # vwb_data: off by default. Annual is fully measured (filled marker); DJF
+    # still estimates its (control, pi) corner and draws hollow + bracket.
     for i, ax in enumerate(axes_left):
-        functions.hosmip_regression_plot(multi_model_dict, region=plot_regions[i], season=season, window=window, plot_bg=plot_bg, quantile_reg=False, no_plots=False, low_ylim=-14, linear_95_reg=True, linear_5_reg=False, central_reg=None, central_reg_intercept=False, hosmip_ref_pi=True, cap_x_range=100, bm_data=True, liu_data=True, vwb_data=True, boot_data=True, boot_regression=True, giss_data=giss_panel_for_season, giss_regression=(giss_panel_for_season is not None), giss_intercept=False, giss_time_period=giss_time_period, add_combined_results=True, combined_results_label=False, add_hosmip_mpi_regression=True, hosmip_reg_ds_dict=hosmip_reg_ds_dict, weakening_unit=weakening_unit, sv_xmax=sv_xmax_ad, ax=ax, markersize=10)
+        functions.hosmip_regression_plot(multi_model_dict, region=plot_regions[i], season=season, window=window, plot_bg=plot_bg, quantile_reg=False, no_plots=False, low_ylim=-14, linear_95_reg=True, linear_5_reg=False, central_reg=None, central_reg_intercept=False, hosmip_ref_pi=True, cap_x_range=100, bm_data=True, liu_data=True, vwb_data=vwb_data, boot_data=True, boot_regression=True, giss_data=giss_panel_for_season, giss_regression=(giss_panel_for_season is not None), giss_intercept=False, giss_time_period=giss_time_period, add_combined_results=True, combined_results_label=False, add_hosmip_mpi_regression=True, hosmip_reg_ds_dict=hosmip_reg_ds_dict, weakening_unit=weakening_unit, sv_xmax=sv_xmax_ad, ax=ax, markersize=10)
         if i != 3:
             ax.tick_params(labelbottom=False)
             ax.spines['bottom'].set_visible(False)
@@ -141,8 +170,14 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
     ax2_pos = ax_left_2.get_position()
     fig_x = ax2_pos.x0 + 1.25 * ax2_pos.width
 
-    # Studies legend: near top of ax_left_1
+    # Studies legend: near top of ax_left_1. Anchored at the top and growing
+    # downward, so an optional study (vwb_data adds a 'v. Westen & Baatsen'
+    # row) makes it reach further down — far enough, at 6 entries, to
+    # overlap the 'Combined forcing MPI-ESM1.2-LR' annotation below it (that
+    # annotation's position is fixed, tuned for the 5-entry baseline). Nudge
+    # the anchor up per row beyond that baseline so the legend clears it.
     fig_y_top = ax_left_1.get_position().y1
+    fig_y_top += 0.014 * max(0, len(l_studies) - 5)
     fig.legend(h_studies, l_studies, frameon=False, ncols=1, fontsize=8,
                loc='upper center', bbox_to_anchor=(fig_x, fig_y_top))
 
@@ -162,7 +197,10 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
     # CMIP-cooling point dropped onto the end-of-century panel at its own
     # first-onset-decade weakening.
     cc_ds_for_plot = cmip_cooling_ds if cmip_cooling_show else None
-    functions.plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_ds_dict=hosmip_reg_ds_dict, season=season, hosmip_markers=hosmip_markers, T_ref=T_ref, plot_bg=plot_bg, ext_ax=ax_right, title=False, reg_ds_giss=reg_ds_giss, giss_time_period=giss_time_period, cmip_cooling_ds=cc_ds_for_plot, cmip_cooling_decade=None, aggregate_first=aggregate_first, amoc_extent=_ext, weakening_unit=weakening_unit, sv_xmax=sv_xmax_e)
+    # cmip_range_show swaps the NAHosMIP min-max bar for the Synthetic CMIP6
+    # range (direct + rescaled + synthetic cooling sensitivities).
+    cr_ds_for_plot = cmip_range_ds if cmip_range_show else None
+    functions.plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_ds_dict=hosmip_reg_ds_dict, season=season, hosmip_markers=hosmip_markers, T_ref=T_ref, plot_bg=plot_bg, ext_ax=ax_right, title=False, reg_ds_giss=reg_ds_giss, giss_time_period=giss_time_period, cmip_cooling_ds=cc_ds_for_plot, cmip_cooling_decade=None, aggregate_first=aggregate_first, amoc_extent=_ext, weakening_unit=weakening_unit, sv_xmax=sv_xmax_e, cmip_range_ds=cr_ds_for_plot, cmip_range_mode=cmip_range_mode, nahosmip_overlay=nahosmip_overlay)
 
     # Align ax_right vertically with the left column (top of ax_left_1, bottom of ax_left_4)
     # The AMOC projection bars/text above the upper x-axis overflow by ~5% of axes height,
@@ -204,9 +242,21 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
     giss_tag = f'_giss-{giss_time_period}' if reg_ds_giss is not None else '_giss-off'
     cc_tag = ('_cc-on' if (cmip_cooling_ds is not None and cmip_cooling_show)
               else '_cc-off')
-    agg_tag = '_aggfirst-on' if aggregate_first else '_aggfirst-off'
-    wunit_tag = f'_wunit-{weakening_unit}'
-    savepath = f"../plots/Fig3_plotbg-{plot_bg}_season-{season or 'annual'}_Tref-{T_ref}_markers-{hosmip_markers}{giss_tag}{cc_tag}{agg_tag}{wunit_tag}{functions.fw_suffix(future_window)}"
+    agg_tag = '_aggf-on' if aggregate_first else '_aggf-off'
+    wunit_tag = f'_wu-{weakening_unit}'
+    # Always-present facet (cc_tag pattern) so the dashboard can filter
+    # cr-off explicitly. Tags abbreviated 2026-08-31 (Overleaf 150-char
+    # basename limit); table in the METHODS Changelog entry of that date.
+    cr_tag = (f"_cr-{'med' if cmip_range_mode == 'medians' else 'mc'}"
+              + f"_pred-{cmip_range_predictors}"
+              + f"_sdep-{ssf._SDEP_TAG.get(cmip_range_statedep, cmip_range_statedep)}"
+              + f"_cal-{ssf._CAL_TAG.get(cmip_range_calset, cmip_range_calset)}"
+              if (cmip_range_ds is not None and cmip_range_show) else '_cr-off')
+    hosov_tag = ('_hosov-on' if (nahosmip_overlay and cmip_range_ds is not None
+                                 and cmip_range_show) else '')
+    vwb_tag = '_vwb-on' if vwb_data else '_vwb-off'
+    savepath = f"../plots/Fig3_plotbg-{plot_bg}_season-{season or 'annual'}_Tref-{T_ref}_mark-{'on' if hosmip_markers else 'off'}{giss_tag}{cc_tag}{agg_tag}{wunit_tag}{cr_tag}{hosov_tag}{vwb_tag}{functions.fw_suffix(future_window)}"
+    functions.check_savepath(savepath)
     fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight', transparent=True if plot_bg=='black' else False)
     fig.savefig(savepath + '.pdf', bbox_inches='tight', dpi=400, transparent=True if plot_bg=='black' else False)
 
@@ -224,6 +274,9 @@ if __name__ == '__main__':
     hosmip_markers = False
     giss_time_period = '2101-2300'  # '2101-2300' or '2015-2500'
     cmip_cooling_show = False
+    cmip_range_show = True   # True -> Synthetic CMIP6 range in panel e
+    cmip_range_mode = 'medians'  # 'medians' (IQR + median + faint min-max) | 'mc' (draw quartiles)
+    nahosmip_overlay = False  # True -> hatch the NAHosMIP min-max on top (appendix)
     aggregate_first = True
     weakening_unit = 'pct'  # 'pct' (% weakening vs PI) or 'sv' (absolute Sv weakening); 'sv' requires aggregate_first=True
     future_window = None  # None -> canonical 2091-2100; e.g. ('2081','2090') for a sensitivity variant
@@ -247,5 +300,11 @@ if __name__ == '__main__':
                                 cmip_cooling_ds=cmip_cooling_ds,
                                 cmip_cooling_show=cmip_cooling_show,
                                 aggregate_first=aggregate_first, weakening_unit=weakening_unit,
-                                future_window=future_window)
+                                future_window=future_window,
+                                cmip_range_ds=cmip_range_ds, cmip_range_show=cmip_range_show,
+                                cmip_range_mode=cmip_range_mode,
+                                cmip_range_statedep=cmip_range_statedep,
+                                cmip_range_calset=cmip_range_calset,
+                                cmip_range_predictors=cmip_range_predictors,
+                                nahosmip_overlay=nahosmip_overlay)
 # %%

@@ -2,19 +2,23 @@
 
 Globs the legacy uo1075 archive and the bu1431 staging mirror for files of
 the form ``{model_lower}_{variant_id}_{tas|amoc26}_yr.nc``, dedupes across
-the two roots, and returns the available realisations. Consumers:
+the two roots, and returns the available realisations. Seasonal tas
+(``{model}/tas_{djf,jja}/``) is indexed the same way by
+``available_seasonal_realisations``; ``missing_seasonal`` is the difference
+between the two and is what drives seasonal staging. Consumers:
 
 - ``functions.compute_amoc_extent`` — CMIP6 weakening envelope per SSP.
 - ``functions.get_cmip_projections`` — paper-set projection load.
 - ``cmip_cooling`` — broader CMIP6 decadal-cooling scan.
 
 Disk scans are memoised process-locally. A change-triggered snapshot of the
-full inventory lives at ``data/cmip6_inventory_snapshots/latest.json``; a new
-dated archive is created only when the on-disk set actually differs from
-``latest.json`` (so calling ``available_realisations`` repeatedly is free
-after the first call per process). Reproducibility: passing
-``snapshot=path`` replays a saved inventory and asserts every listed file
-still exists.
+full inventory lives at ``data/cmip6_inventory_snapshots/latest.json``,
+carrying both the annual ``realisations`` block and the
+``seasonal_realisations`` one; a new dated archive is created only when
+either differs from ``latest.json`` (so calling ``available_realisations``
+repeatedly is free after the first call per process). Reproducibility:
+passing ``snapshot=path`` replays a saved annual inventory and asserts
+every listed file still exists.
 
 JSON dicts under ``/work/uo1075/.../CMIP6/{ssp}/cmip6_{ssp}_{var}_dict.json``
 are known incomplete and never consulted.
@@ -39,6 +43,8 @@ SEARCH_ROOTS = (
 )
 
 SCENARIOS = ('historical', 'ssp126', 'ssp245', 'ssp370', 'ssp585')
+
+SEASONS = ('djf', 'jja')
 
 # Local cache suffix per ESGF variable_id; ``'amoc'`` is an alias for ``amoc26``.
 VAR_SUFFIX = {'tas': 'tas', 'amoc26': 'amoc26', 'amoc': 'amoc26'}
@@ -105,6 +111,9 @@ RETRACTED = frozenset({
 })
 
 SNAPSHOT_DIR = '/home/m/m300940/teu_amoc/data/cmip6_inventory_snapshots'
+if not os.path.isdir(SNAPSHOT_DIR):  # off-Levante: snapshots are checked into the repo
+    SNAPSHOT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                '..', 'data', 'cmip6_inventory_snapshots')
 SNAPSHOT_LATEST = os.path.join(SNAPSHOT_DIR, 'latest.json')
 
 _SCAN_CACHE = {}
@@ -212,6 +221,46 @@ def _scan_all():
     return result
 
 
+def _scan_one_seasonal(scenario, season):
+    """Return ``{esgf_id: sorted variant_id list}`` for one (scenario, season).
+
+    Seasonal tas lives one level deeper than the annual caches, in
+    ``{root}/{scenario}/{model}/tas_{season}/{model}_{rea}_tas_{season}.nc``.
+    """
+    if season not in SEASONS:
+        raise ValueError(f"season must be one of {SEASONS}; got {season!r}")
+    out = {}
+    for root in SEARCH_ROOTS:
+        scen_dir = os.path.join(root, scenario)
+        if not os.path.isdir(scen_dir):
+            continue
+        for model_dir in sorted(glob.glob(os.path.join(scen_dir, '*'))):
+            model_local = os.path.basename(model_dir)
+            if (not os.path.isdir(model_dir)
+                    or model_local.startswith('cmip6_')):
+                continue
+            existing = out.setdefault(to_esgf(model_local), set())
+            prefix, tail = f'{model_local}_', f'_tas_{season}.nc'
+            for f in glob.glob(os.path.join(
+                    model_dir, f'tas_{season}', f'{prefix}*{tail}')):
+                name = os.path.basename(f)
+                rea = name[len(prefix):-len(tail)]
+                if rea:
+                    existing.add(rea)
+    return {m: sorted(reas) for m, reas in out.items()}
+
+
+def _scan_all_seasonal():
+    """Full ``{season: {scenario: {model: [...]}}}`` scan, memoised."""
+    with _SCAN_LOCK:
+        if 'seasonal' in _SCAN_CACHE:
+            return _SCAN_CACHE['seasonal']
+        result = {s: {scen: _scan_one_seasonal(scen, s) for scen in SCENARIOS}
+                  for s in SEASONS}
+        _SCAN_CACHE['seasonal'] = result
+    return result
+
+
 def clear_cache():
     """Force re-scan on next call. Used by tests; rarely needed in production."""
     with _SCAN_LOCK:
@@ -269,6 +318,100 @@ def available_realisations(scenario, var, models=None, *,
     return raw
 
 
+def available_seasonal_realisations(scenario, season, models=None, *,
+                                    esgf_names=True, include_retracted=False):
+    """Return ``{model: sorted variant_id list}`` with seasonal tas on disk.
+
+    Seasonal sibling of :func:`available_realisations`, covering the
+    ``tas_{season}/`` subdirectories written by
+    ``scripts/processing/process_seasonal_tas.py``. Always a subset of the
+    annual set for the same ``(scenario, 'tas')``; the difference is the
+    staging work list. No ``snapshot`` replay — the snapshot records
+    seasonal coverage but no consumer reproduces a run from it yet.
+    """
+    if scenario not in SCENARIOS:
+        raise ValueError(
+            f"scenario must be one of {SCENARIOS}; got {scenario!r}")
+    if season not in SEASONS:
+        raise ValueError(f"season must be one of {SEASONS}; got {season!r}")
+
+    full = _scan_all_seasonal()
+    raw = {m: list(rs) for m, rs in full[season].get(scenario, {}).items()}
+    raw = _apply_retracted(raw, include_retracted=include_retracted)
+    raw = _select_and_rekey(raw, models=models, esgf_names=esgf_names)
+
+    _maybe_write_snapshot()
+    return raw
+
+
+def missing_seasonal(scenario, season, models=None, *, esgf_names=True):
+    """Return ``{model: [rea, ...]}`` present annually but not seasonally.
+
+    The staging work list, taken from the inventory rather than from a
+    per-file ``os.path.exists`` sweep, so the script and the inventory
+    cannot disagree about what is missing.
+    """
+    annual = available_realisations(
+        scenario, 'tas', models=models, esgf_names=esgf_names)
+    seasonal = available_seasonal_realisations(
+        scenario, season, models=models, esgf_names=esgf_names)
+    out = {}
+    for m, reas in annual.items():
+        gap = [r for r in reas if r not in set(seasonal.get(m, []))]
+        if gap:
+            out[m] = gap
+    return out
+
+
+def resolve_seasonal_path(model, scenario, variant_id, season):
+    """Locate the seasonal tas file for ``(model, scenario, rea, season)``."""
+    lower = to_lower(model)
+    for root in SEARCH_ROOTS:
+        p = os.path.join(root, scenario, lower, f'tas_{season}',
+                         f'{lower}_{variant_id}_tas_{season}.nc')
+        if os.path.exists(p):
+            return p
+    raise FileNotFoundError(
+        f"no {season} tas cache for {model}/{scenario}/{variant_id} in any "
+        f"of {SEARCH_ROOTS}")
+
+
+HISTORICAL_YEARS = (1850, 2014)
+
+
+def open_seasonal_tas(model, scenario, variant_id, season):
+    """Open one seasonal tas cache as a DataArray, K, native grid.
+
+    Two upstream quirks are absorbed here so every consumer sees the same
+    thing. (i) Most seasonal files carry ``lat_bnds``/``lon_bnds`` alongside
+    ``tas``, so ``open_dataarray`` raises; we open as a Dataset and pick the
+    variable. (ii) The historical seasonal files written on 2026-08-20 are
+    stamped 2015-2179 instead of 1850-2014 (all 27 models, both seasons;
+    values are correct, only the axis is wrong, and ``/work/uo1075`` is
+    read-only for us). A 165-step historical series whose origin is not 1850
+    is re-stamped onto the true axis; any other length raises rather than
+    guessing. Sibling workaround, on the HosMIP/GISS reader:
+    ``src/teu_functions.py`` historical seasonal block.
+    """
+    da = xr.open_dataset(
+        resolve_seasonal_path(model, scenario, variant_id, season),
+        use_cftime=True)['tas']
+    if scenario != 'historical':
+        return da
+    y0, y1 = HISTORICAL_YEARS
+    n = y1 - y0 + 1
+    if int(da.time.values[0].year) == y0:
+        return da
+    if da.sizes['time'] != n:
+        raise ValueError(
+            f"{model}/{scenario}/{variant_id} {season}: time axis starts at "
+            f"{da.time.values[0].year} (expected {y0}) and has "
+            f"{da.sizes['time']} steps (expected {n}); refusing to re-stamp.")
+    cls = type(da.time.values[0])
+    return da.assign_coords(
+        time=[cls(y, 1, 1) for y in range(y0, y1 + 1)])
+
+
 def resolve_path(model, scenario, variant_id, var):
     """Locate the file for ``(model, scenario, variant_id, var)`` on disk.
 
@@ -276,7 +419,7 @@ def resolve_path(model, scenario, variant_id, var):
     r1i1p1f1: the project keeps a 2015–2300 extension at
     ``{LEGACY}/ssp126/mri-esm2-0/extension_2300/`` that replaces (not
     appends to) the standard 2015–2100 cache. Lifted from
-    ``cmip_cooling._resolve_path``.
+    ``cmip_cooling.resolve_cache_path``.
     """
     suffix = _suffix(var)
     lower = to_lower(model)
@@ -393,13 +536,13 @@ def _git_short_hash():
 
 def _build_current_snapshot():
     """Build the full inventory snapshot (raw, pre-retracted-filter)."""
-    full = _scan_all()
     return {
         'written': dt.datetime.now().isoformat(timespec='seconds'),
         'git_hash': _git_short_hash(),
         'search_roots': list(SEARCH_ROOTS),
         'retracted': sorted([list(t) for t in RETRACTED]),
-        'realisations': full,
+        'realisations': _scan_all(),
+        'seasonal_realisations': _scan_all_seasonal(),
     }
 
 
@@ -415,22 +558,33 @@ def _maybe_write_snapshot():
         if _SNAPSHOT_CHECKED[0]:
             return
         _SNAPSHOT_CHECKED[0] = True
+        if not any(os.path.isdir(r) for r in SEARCH_ROOTS):
+            # Off-Levante mirror (2026-08-31): the raw archives are absent, so
+            # a scan is vacuously empty — it must never clobber the checked-in
+            # snapshot (it did once; restored from HEAD the same day).
+            return
         try:
             os.makedirs(SNAPSHOT_DIR, exist_ok=True)
         except OSError:
             return  # snapshot dir unwritable; silent skip
         cur = _build_current_snapshot()
         old_realisations = None
+        old_seasonal = None
         old_written = None
         if os.path.exists(SNAPSHOT_LATEST):
             try:
                 with open(SNAPSHOT_LATEST, 'r') as f:
                     old = json.load(f)
                 old_realisations = old.get('realisations')
+                # Absent in snapshots written before the seasonal block
+                # existed; that counts as a difference, so the first call
+                # after the upgrade writes one snapshot and then settles.
+                old_seasonal = old.get('seasonal_realisations')
                 old_written = old.get('written')
             except (json.JSONDecodeError, OSError):
                 old_realisations = None
-        if old_realisations == cur['realisations']:
+        if (old_realisations == cur['realisations']
+                and old_seasonal == cur['seasonal_realisations']):
             return  # no change; don't touch latest.json
         if old_realisations is not None and old_written is not None:
             safe_ts = old_written.replace(':', '-')

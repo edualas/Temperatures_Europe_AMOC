@@ -92,7 +92,7 @@ def make_figure(reg_ds_mpi, only_pi=False, plot_season='', plot_bg='white', weak
             )
         j+=1
 
-    row_labels = ["Scaling factors: local cooling as a function of additional AMOC weakening",
+    row_labels = ["Cooling sensitivities: local cooling as a function of additional AMOC weakening",
                   "",
                   f"Net-cooling AMOC weakening w.r.t. annual mean present-day temperatures ({functions.PD_LABEL})" if plot_season==''else f"Net-cooling AMOC weakening w.r.t. {plot_season.upper()} mean present-day temperatures ({functions.PD_LABEL})",
                   "Net-cooling AMOC weakening w.r.t. annual mean preindustrial temperatures (1850-1899)" if plot_season==''else f"Net-cooling AMOC weakening w.r.t. {plot_season.upper()} mean preindustrial temperatures (1850-1899)",

@@ -207,7 +207,7 @@ def make_figure(reg_ds_mpi, plot_season='', plot_bg='white', T_ref='pi',
                     color='black' if not plot_bg == 'black' else 'white')
     if not omit_scaling_row:
         fig.text(left, axes[0].get_position().y1 + 0.02,
-                 'Scaling factors: local cooling as a function of additional AMOC weakening',
+                 'Cooling sensitivities: local cooling as a function of additional AMOC weakening',
                  **label_kw)
     for r, lbl in enumerate(binary_labels):
         row_top = axes[ncols * (row_offset + r)].get_position().y1
