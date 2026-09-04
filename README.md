@@ -33,5 +33,5 @@ No install step is needed: the `scripts/functions.py` shim puts `src/` and the `
 - `scripts/exploratory/` — analysis modules shared by the supplementary figures (CMIP6 projected-cooling pipeline, warming-at-weakening diagnostics).
 - `scripts/processing/` — preprocessing of the raw model output (AMOC strength and tas from MPI-ESM1.2-LR simulations, CMIP6 scenarios, and NAHosMIP hosing experiments) into the cached inputs used by the figure scripts.
 - `scripts/cmip6_inventory.py` — filesystem inventory of the CMIP6 input files; single source of truth for which model/scenario/realisation files the projection scripts use.
-- `scripts/data_process_paper.ipynb`, `analysis_paper.ipynb`, `create_hosing_fields.ipynb` — notebooks with the remaining preprocessing steps, paper analysis (including three supplementary figures not covered by the scripts above), and generation of the hosing perturbation fields.
+- `scripts/data_process_paper.ipynb`, `create_hosing_fields.ipynb`, `scripts/supplementary/additional_supplementary_plots.ipynb` — notebooks with the remaining preprocessing steps, generation of the hosing perturbation fields, and additional supplementary figures not generated above.
 - `tests/` — pytest invariant suite guarding the methodological defaults (see `tests/README.md`).
