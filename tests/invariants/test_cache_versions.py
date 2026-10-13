@@ -71,6 +71,12 @@ TRACKED_FILES = [
     # range on it. Skip (no baseline) until first built.
     "cmip_synth_wt_countries_fw2071-2080.nc",
     "cmip_range_fig3_sdep-pooled_fw2071-2080.nc",
+    # Present-day-referenced siblings of the paper default (2026-10-07,
+    # T_ref='pd': warming vs 1991-2020); need baseline_tas_pd in the
+    # Levante-built target cache.
+    "cmip_range_fig3_sdep-pooled_tref-pd.nc",
+    "cmip_range_fig3_sdep-pooled_season-djf_tref-pd.nc",
+    "cmip_range_fig3_sdep-pooled_season-jja_tref-pd.nc",
     "cmip_synth_wt_EU.nc",
     "cmip_synth_wt_countries.nc",
 ]

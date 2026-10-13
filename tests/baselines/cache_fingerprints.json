@@ -1,6 +1,6 @@
 {
   "cmip_range_fig3.nc": {
-    "checksum": 195125.625196,
+    "checksum": 216867.72864,
     "n_nonfinite": 104,
     "shape": {
       "dT_max": [
@@ -106,7 +106,7 @@
     "size_bytes": 50690
   },
   "cmip_range_fig3_cal-consistentssp.nc": {
-    "checksum": 140700.187238,
+    "checksum": 146100.722672,
     "n_nonfinite": 159,
     "shape": {
       "dT_max": [
@@ -212,8 +212,8 @@
     "size_bytes": 50697
   },
   "cmip_range_fig3_cal-full.nc": {
-    "checksum": 296501.56172,
-    "n_nonfinite": 94,
+    "checksum": 221739.822984,
+    "n_nonfinite": 97,
     "shape": {
       "dT_max": [
         "region",
@@ -318,7 +318,7 @@
     "size_bytes": 50688
   },
   "cmip_range_fig3_cal-nocesm2.nc": {
-    "checksum": 197702.28735,
+    "checksum": 177315.830023,
     "n_nonfinite": 87,
     "shape": {
       "dT_max": [
@@ -424,8 +424,8 @@
     "size_bytes": 50691
   },
   "cmip_range_fig3_pred-wt.nc": {
-    "checksum": 201416.824766,
-    "n_nonfinite": 129,
+    "checksum": 201509.148743,
+    "n_nonfinite": 133,
     "shape": {
       "dT_max": [
         "region",
@@ -530,7 +530,7 @@
     "size_bytes": 50691
   },
   "cmip_range_fig3_sdep-interact.nc": {
-    "checksum": 282055.073506,
+    "checksum": 366128.62624,
     "n_nonfinite": 62,
     "shape": {
       "dT_max": [
@@ -636,8 +636,8 @@
     "size_bytes": 50694
   },
   "cmip_range_fig3_sdep-interact_cal-consistentssp.nc": {
-    "checksum": 293024.251094,
-    "n_nonfinite": 114,
+    "checksum": 319734.372456,
+    "n_nonfinite": 113,
     "shape": {
       "dT_max": [
         "region",
@@ -742,7 +742,7 @@
     "size_bytes": 50701
   },
   "cmip_range_fig3_sdep-interact_cal-full.nc": {
-    "checksum": 282084.587828,
+    "checksum": 366158.20267,
     "n_nonfinite": 62,
     "shape": {
       "dT_max": [
@@ -848,8 +848,8 @@
     "size_bytes": 50692
   },
   "cmip_range_fig3_sdep-interact_cal-nocesm2.nc": {
-    "checksum": 196761.128539,
-    "n_nonfinite": 66,
+    "checksum": 202371.59931,
+    "n_nonfinite": 65,
     "shape": {
       "dT_max": [
         "region",
@@ -954,7 +954,7 @@
     "size_bytes": 50695
   },
   "cmip_range_fig3_sdep-pooled.nc": {
-    "checksum": 414004.310936,
+    "checksum": 474197.273426,
     "n_nonfinite": 95,
     "shape": {
       "dT_max": [
@@ -1060,8 +1060,8 @@
     "size_bytes": 50692
   },
   "cmip_range_fig3_sdep-pooled_cal-consistentssp.nc": {
-    "checksum": 218169.907793,
-    "n_nonfinite": 143,
+    "checksum": 218624.139578,
+    "n_nonfinite": 146,
     "shape": {
       "dT_max": [
         "region",
@@ -1166,7 +1166,7 @@
     "size_bytes": 50699
   },
   "cmip_range_fig3_sdep-pooled_cal-full.nc": {
-    "checksum": 414033.825258,
+    "checksum": 474226.849856,
     "n_nonfinite": 95,
     "shape": {
       "dT_max": [
@@ -1272,8 +1272,8 @@
     "size_bytes": 50690
   },
   "cmip_range_fig3_sdep-pooled_cal-nocesm2.nc": {
-    "checksum": 275396.788555,
-    "n_nonfinite": 63,
+    "checksum": 281425.425007,
+    "n_nonfinite": 58,
     "shape": {
       "dT_max": [
         "region",
@@ -1378,7 +1378,7 @@
     "size_bytes": 50693
   },
   "cmip_range_fig3_sdep-pooled_fw2071-2080.nc": {
-    "checksum": 380923.976873,
+    "checksum": 357310.640651,
     "n_nonfinite": 77,
     "shape": {
       "dT_max": [
@@ -1484,8 +1484,8 @@
     "size_bytes": 50692
   },
   "cmip_range_fig3_sdep-pooled_pred-wt.nc": {
-    "checksum": 202298.691031,
-    "n_nonfinite": 125,
+    "checksum": 234768.583188,
+    "n_nonfinite": 124,
     "shape": {
       "dT_max": [
         "region",
@@ -1590,7 +1590,113 @@
     "size_bytes": 50693
   },
   "cmip_range_fig3_sdep-pooled_season-djf.nc": {
-    "checksum": 200722.810999,
+    "checksum": 185633.859352,
+    "n_nonfinite": 121,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50692
+  },
+  "cmip_range_fig3_sdep-pooled_season-djf_tref-pd.nc": {
+    "checksum": 132980.727917,
     "n_nonfinite": 121,
     "shape": {
       "dT_max": [
@@ -1696,8 +1802,220 @@
     "size_bytes": 50692
   },
   "cmip_range_fig3_sdep-pooled_season-jja.nc": {
-    "checksum": 324557.134102,
-    "n_nonfinite": 139,
+    "checksum": 387402.109087,
+    "n_nonfinite": 138,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50692
+  },
+  "cmip_range_fig3_sdep-pooled_season-jja_tref-pd.nc": {
+    "checksum": 290439.307919,
+    "n_nonfinite": 138,
+    "shape": {
+      "dT_max": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_median": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_min": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q25": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "dT_q75": [
+        "region",
+        "scenario",
+        "w_level"
+      ],
+      "fit_intercept": [
+        "region"
+      ],
+      "fit_n": [
+        "region"
+      ],
+      "fit_r2": [
+        "region"
+      ],
+      "fit_resid_std": [
+        "region"
+      ],
+      "fit_slope": [
+        "region"
+      ],
+      "fit_slope_p": [
+        "region"
+      ],
+      "frac_models_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "mc_hi": [
+        "region",
+        "scenario"
+      ],
+      "mc_lo": [
+        "region",
+        "scenario"
+      ],
+      "mc_median": [
+        "region",
+        "scenario"
+      ],
+      "mc_q25": [
+        "region",
+        "scenario"
+      ],
+      "mc_q75": [
+        "region",
+        "scenario"
+      ],
+      "median": [
+        "region",
+        "scenario"
+      ],
+      "n_models": [
+        "region",
+        "scenario"
+      ],
+      "n_targets": [
+        "region",
+        "scenario"
+      ],
+      "p_no_cooling": [
+        "region",
+        "scenario"
+      ],
+      "q25": [
+        "region",
+        "scenario"
+      ],
+      "q75": [
+        "region",
+        "scenario"
+      ],
+      "wmax": [
+        "region",
+        "scenario"
+      ],
+      "wmin": [
+        "region",
+        "scenario"
+      ]
+    },
+    "size_bytes": 50692
+  },
+  "cmip_range_fig3_sdep-pooled_tref-pd.nc": {
+    "checksum": 341130.799025,
+    "n_nonfinite": 95,
     "shape": {
       "dT_max": [
         "region",
@@ -1802,8 +2120,8 @@
     "size_bytes": 50692
   },
   "cmip_range_fig3_season-djf.nc": {
-    "checksum": 217018.831862,
-    "n_nonfinite": 112,
+    "checksum": 182752.487176,
+    "n_nonfinite": 113,
     "shape": {
       "dT_max": [
         "region",
@@ -1908,8 +2226,8 @@
     "size_bytes": 50690
   },
   "cmip_range_fig3_season-jja.nc": {
-    "checksum": 489466.897493,
-    "n_nonfinite": 123,
+    "checksum": 340879.47347,
+    "n_nonfinite": 127,
     "shape": {
       "dT_max": [
         "region",
@@ -2014,7 +2332,7 @@
     "size_bytes": 50690
   },
   "cmip_synth_wt_EU.nc": {
-    "checksum": 37635.787698,
+    "checksum": 37595.263469,
     "n_nonfinite": 32,
     "shape": {
       "baseline_amoc": [
@@ -2043,8 +2361,8 @@
     "size_bytes": 13930
   },
   "cmip_synth_wt_countries.nc": {
-    "checksum": 1228073.591904,
-    "n_nonfinite": 872,
+    "checksum": 1671785.360499,
+    "n_nonfinite": 878,
     "shape": {
       "baseline_amoc": [
         "model",
@@ -2053,6 +2371,11 @@
       "baseline_tas": [
         "model",
         "scenario",
+        "region",
+        "season"
+      ],
+      "baseline_tas_pd": [
+        "model",
         "region",
         "season"
       ],
@@ -2071,11 +2394,11 @@
         "scenario"
       ]
     },
-    "size_bytes": 91044
+    "size_bytes": 103722
   },
   "cmip_synth_wt_countries_fw2071-2080.nc": {
-    "checksum": 1225768.649618,
-    "n_nonfinite": 872,
+    "checksum": 1669491.389825,
+    "n_nonfinite": 878,
     "shape": {
       "baseline_amoc": [
         "model",
@@ -2084,6 +2407,11 @@
       "baseline_tas": [
         "model",
         "scenario",
+        "region",
+        "season"
+      ],
+      "baseline_tas_pd": [
+        "model",
         "region",
         "season"
       ],
@@ -2102,7 +2430,7 @@
         "scenario"
       ]
     },
-    "size_bytes": 91044
+    "size_bytes": 103722
   },
   "hosmip_masks.pkl": {
     "checksum": 0.0,
@@ -2137,9 +2465,9 @@
     "type": "dict"
   },
   "multi_model_dict.pkl": {
-    "checksum": 135562888.2594,
+    "checksum": 137837846.6278,
     "len": 10,
-    "size_bytes": 282054801,
+    "size_bytes": 281968406,
     "top_level_keys": [
       "CCSM4",
       "CESM1",
