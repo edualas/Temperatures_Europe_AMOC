@@ -22,6 +22,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 import xarray as xr
+CFTIME = xr.coders.CFDatetimeCoder(use_cftime=True)  # xarray >= 2025.1: the use_cftime kwarg is deprecated
 
 PORTAL = (
     "https://portal.nccs.nasa.gov/datashare/giss_cmip6/"
@@ -112,11 +113,11 @@ if __name__ == "__main__":
     # Derive the new yearly mean
     paths = sorted(glob.glob(f"{RAW_DIR}/{MEMBER}/tas_Amon_*.nc"))
     assert len(paths) == 2, f"expected 2 chunks, got {len(paths)}"
-    ds = xr.open_mfdataset(paths, parallel=False, use_cftime=True)
+    ds = xr.open_mfdataset(paths, parallel=False, decode_times=CFTIME)
     new_yr = weighted_mon_to_year_mean(ds, "tas").load()
 
     # Quick sanity: compare to the about-to-be-overwritten DKRZ-pre file
-    old_yr = xr.open_dataarray(OUT_PATH, use_cftime=True)
+    old_yr = xr.open_dataarray(OUT_PATH, decode_times=CFTIME)
     # Align by year
     def by_yr(da):
         return da.assign_coords(year=da.time.dt.year).swap_dims(time="year").drop_vars("time")
@@ -167,7 +168,7 @@ if __name__ == "__main__":
         f"expected 2 DKRZ msftmz chunks, got {len(dkrz_paths)}")
     print(f"\ncell B: deriving ssp370 r1 amoc26_yr from DKRZ msftmz...")
     print(f"  inputs: {[p.rsplit('/',1)[1] for p in dkrz_paths]}")
-    ds = xr.open_mfdataset(dkrz_paths, parallel=False, use_cftime=True)
+    ds = xr.open_mfdataset(dkrz_paths, parallel=False, decode_times=CFTIME)
     amoc_yr = weighted_mon_to_year_mean(
         ds.sel(basin=0, drop=True).sel(lat=26.5, method="nearest", drop=True),
         "msftmz",
@@ -195,7 +196,7 @@ if __name__ == "__main__":
     sibs = [xr.open_dataarray(
         f"/work/bu1431/T_EU_AMOC/CMIP6/giss-e2-1-g/cmip_proj_staging/"
         f"ssp370/giss-e2-1-g/giss-e2-1-g_r{r}i1p1f2_amoc26_yr.nc",
-        use_cftime=True).sel(time=slice("2091","2100")).mean()
+        decode_times=CFTIME).sel(time=slice("2091","2100")).mean()
         for r in range(2, 11)]
     sibs = [float(s) for s in sibs]
     print(f"  r2-r10 2091-2100 means: {[f'{s:+.2f}' for s in sibs]}")

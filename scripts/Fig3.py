@@ -49,11 +49,13 @@ if __name__ == '__main__':
     cmip_range_calset = 'hosing'      # 'hosing' (default)|'full'|'nocesm2'|'consistentssp'
     cmip_range_predictors = 'w'       # 'w' (default) | 'wt'
     cmip_range_season = ''            # must match the RUN cell's season
+    cmip_range_T_ref = 'pi'           # 'pi' | 'pd'; must match the RUN cell's T_ref
     cmip_range_ds = ssf.get_cmip_range_ds(recompute=False,
                                           state_dep=cmip_range_statedep,
                                           cal_set=cmip_range_calset,
                                           predictors=cmip_range_predictors,
-                                          season=cmip_range_season)
+                                          season=cmip_range_season,
+                                          T_ref=cmip_range_T_ref)
 
 ########################################
 #%%
@@ -71,17 +73,24 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
                 cmip_range_ds=None, cmip_range_show=True, cmip_range_mode='medians',
                 cmip_range_statedep='pooled', cmip_range_calset='hosing',
                 cmip_range_predictors='w', nahosmip_overlay=False,
-                vwb_data=True):
+                vwb_data=True, vwb_window=None, likely_range=False):
     plt.style.use('default')
+    plt.rcParams.update({**functions.PRINT_RC, 'font.size': 6})  # 6 pt base (old 12 pt × s = 0.5), as Fig3_simple
     # F9 (2026-08-31): the filename tags must describe the dataset actually
     # drawn (mirrors Fig3_simple).
+    if cmip_range_show and cmip_range_ds is None:
+        raise ValueError("cmip_range_show=True but cmip_range_ds is None; pass the "
+                         "range ds or set cmip_range_show=False explicitly")
     if cmip_range_ds is not None and cmip_range_show:
-        for _attr, _want in (('state_dep', cmip_range_statedep),
-                             ('cal_set', cmip_range_calset),
-                             ('predictors', cmip_range_predictors)):
-            assert cmip_range_ds.attrs.get(_attr) == _want, (
-                f"cmip_range_ds has {_attr}={cmip_range_ds.attrs.get(_attr)!r} "
-                f"but the tag kwargs say {_want!r}")
+        _fw = future_window or functions.FUTURE_WINDOW
+        for _attr, _want, _dflt in (('state_dep', cmip_range_statedep, None),
+                                    ('cal_set', cmip_range_calset, None),
+                                    ('predictors', cmip_range_predictors, None),
+                                    ('T_ref', T_ref, 'pi'),
+                                    ('future_window', f'{_fw[0]}-{_fw[1]}', None)):
+            assert cmip_range_ds.attrs.get(_attr, _dflt) == _want, (
+                f"cmip_range_ds has {_attr}={cmip_range_ds.attrs.get(_attr, _dflt)!r} "
+                f"but the figure kwargs say {_want!r}")
     # plt.rcParams.update({'font.size': 12})
     # Sv-axis extents (only used when weakening_unit='sv'). Panel e extends to the
     # strongest model's PI (rounded up to a multiple of 5); each model's
@@ -106,7 +115,9 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
         plt.rcParams['axes.facecolor'] = '#191919'
         plt.rcParams['figure.facecolor'] = '#191919'
 
-    fig = plt.figure(figsize=(16, 14))
+    canvas_w = 203  # mm (old 16 in × s = 0.5); the tight crop is 183 mm (fit_print_width)
+    fig = plt.figure(figsize=(canvas_w / 25.4, canvas_w / 25.4 * 14 / 16))
+    fig.set_size_inches(canvas_w / 25.4, canvas_w / 25.4 * 14 / 16, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
     gs = GridSpec(4, 2, width_ratios=[0.35, 0.65], height_ratios=[1, 1, 1, 1], wspace=0.4, hspace=0.08)
 
     ax_left_1 = fig.add_subplot(gs[0, 0])
@@ -132,30 +143,27 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
         giss_panel_for_season = giss_panel_data.get(season)
     else:
         giss_panel_for_season = giss_panel_data
-    # vwb_data: off by default. Annual is fully measured (filled marker); DJF
-    # still estimates its (control, pi) corner and draws hollow + bracket.
+    _vwbw = vwb_window or next(iter(functions.VWB_GHG_WINDOWS))
     for i, ax in enumerate(axes_left):
-        functions.hosmip_regression_plot(multi_model_dict, region=plot_regions[i], season=season, window=window, plot_bg=plot_bg, quantile_reg=False, no_plots=False, low_ylim=-14, linear_95_reg=True, linear_5_reg=False, central_reg=None, central_reg_intercept=False, hosmip_ref_pi=True, cap_x_range=100, bm_data=True, liu_data=True, vwb_data=vwb_data, boot_data=True, boot_regression=True, giss_data=giss_panel_for_season, giss_regression=(giss_panel_for_season is not None), giss_intercept=False, giss_time_period=giss_time_period, add_combined_results=True, combined_results_label=False, add_hosmip_mpi_regression=True, hosmip_reg_ds_dict=hosmip_reg_ds_dict, weakening_unit=weakening_unit, sv_xmax=sv_xmax_ad, ax=ax, markersize=10)
+        functions.hosmip_regression_plot(multi_model_dict, region=plot_regions[i], season=season, window=window, plot_bg=plot_bg, quantile_reg=False, no_plots=False, low_ylim=-14, linear_95_reg=True, linear_5_reg=False, central_reg=None, central_reg_intercept=False, hosmip_ref_pi=True, cap_x_range=100, bm_data=True, liu_data=True, vwb_data=vwb_data, vwb_window=_vwbw, boot_data=True, boot_regression=True, giss_data=giss_panel_for_season, giss_regression=(giss_panel_for_season is not None), giss_intercept=False, giss_time_period=giss_time_period, add_combined_results=True, combined_results_label=False, add_hosmip_mpi_regression=True, hosmip_reg_ds_dict=hosmip_reg_ds_dict, weakening_unit=weakening_unit, sv_xmax=sv_xmax_ad, ax=ax, markersize=2.5)  # scatter area: 10 × s²
         if i != 3:
             ax.tick_params(labelbottom=False)
             ax.spines['bottom'].set_visible(False)
             ax.set_xlabel("")
             ax.tick_params(axis='x', which='both', bottom=False, top=False)
-            ax.tick_params(axis='y', labelsize=10)
         bottom = ax.get_position().y0
         top = ax.get_position().y1
         left = ax.get_position().x0
         tiny_ax = fig.add_axes([0.13, bottom+0.01, 0.1, 0.1], projection=ccrs.PlateCarree())
         functions.get_mask_plot(masks, plot_regions[i], ext_ax=tiny_ax, alpha=0.4, plot_bg=plot_bg)
-        fig.text(0.175, bottom+0.05+region_label_shift[i], plot_regions[i], transform=fig.transFigure, fontsize=10, ha='center', va='bottom', fontweight='bold', color='black' if not plot_bg=='black' else 'black',
+        fig.text(0.175, bottom+0.05+region_label_shift[i], plot_regions[i], transform=fig.transFigure, fontsize=5, ha='center', va='bottom', fontweight='bold', color='black' if not plot_bg=='black' else 'black',
                  bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.5, edgecolor='none'))
-        fig.text(left-0.03, top, subplot_labels[i], transform=fig.transFigure, fontsize=14, ha='right', va='center', fontweight='bold', color='black' if not plot_bg=='black' else 'white')
+        fig.text(left-0.03, top, subplot_labels[i], transform=fig.transFigure, fontsize=8, ha='right', va='center', fontweight='bold', color='black' if not plot_bg=='black' else 'white')
 
-    fig.text(0.465, ax_right.get_position().y1, subplot_labels[4], transform=fig.transFigure, fontsize=14, ha='right', va='center', fontweight='bold', color='black' if not plot_bg=='black' else 'white')
+    fig.text(ax_right.get_position().x0 - 0.01, ax_left_1.get_position().y1, subplot_labels[4], transform=fig.transFigure, fontsize=8, ha='right', va='center', fontweight='bold', color='black' if not plot_bg=='black' else 'white')
 
     if weakening_unit == 'pct':
         ax_left_4.xaxis.set_major_formatter(ticker.PercentFormatter(xmax=100))
-    ax_left_4.tick_params(axis='both', labelsize=10)
 
     handles, labels = ax_left_4.get_legend_handles_labels()
     # Split into HosMIP models (first 8) and additional studies (next entries, skip empty)
@@ -178,18 +186,20 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
     # the anchor up per row beyond that baseline so the legend clears it.
     fig_y_top = ax_left_1.get_position().y1
     fig_y_top += 0.014 * max(0, len(l_studies) - 5)
-    fig.legend(h_studies, l_studies, frameon=False, ncols=1, fontsize=8,
+    l_studies = [l.replace('4x', '4×').replace('2015 - 2100', '2015–2100').replace('2400-2500', '2400–2500')
+                 .replace('2061-2080', '2061–2080').replace(giss_time_period, giss_time_period.replace('-', '–')) for l in l_studies]
+    fig.legend(h_studies, l_studies, frameon=False, ncols=1, fontsize=5,
                loc='upper center', bbox_to_anchor=(fig_x, fig_y_top))
 
     # Models legend: near bottom of ax_left_4
     fig_y_bot = ax_left_3.get_position().y0 + 0.7 * ax_left_4.get_position().height
-    fig.legend(h_models, l_models, frameon=False, ncols=1, fontsize=8,
+    fig.legend(h_models, l_models, frameon=False, ncols=1, fontsize=5,
                loc='upper center', bbox_to_anchor=(fig_x, fig_y_bot))
 
-    ax_left_2.annotate('Combined forcing\nMPI-ESM1.2-LR\nregression\n(this study)', xy=(1.02, 0.84 if season=='' else 0.815 if season=='djf' else 0.86), xytext=(1.25, 1.15), xycoords='axes fraction', ha='center', va='center', fontsize=10, color='brown', fontweight='bold', arrowprops={'arrowstyle': '-|>', 'connectionstyle': 'angle3,angleA=90,angleB=-10', 'color':'brown'})
-    ax_left_2.annotate('Preindustrial hosing\nMPI-ESM1.2-LR\nregression\n(NAHosMIP)', xy=(1.02, 0.82 if season=='' else 0.795 if season=='djf' else 0.84), xytext=(1.25, 0.49), xycoords='axes fraction', ha='center', va='center', fontsize=10, color=functions.hosmip_colors['MPI-ESM1-2-LR'], fontweight='bold', arrowprops={'arrowstyle': '-|>', 'connectionstyle': 'angle3,angleA=90,angleB=-10', 'color':functions.hosmip_colors['MPI-ESM1-2-LR']})
+    ax_left_2.annotate('Combined forcing\nMPI-ESM1.2-LR\nregression\n(this study)', xy=(1.02, 0.84 if season=='' else 0.815 if season=='djf' else 0.86), xytext=(1.25, 1.06), xycoords='axes fraction', ha='center', va='center', fontsize=5, color='black' if not plot_bg=='black' else 'white', fontweight='bold', arrowprops={'arrowstyle': '-|>', 'connectionstyle': 'angle3,angleA=90,angleB=-10', 'color':'brown', 'lw': 0.75, 'mutation_scale': 5})
+    ax_left_2.annotate('Preindustrial hosing\nMPI-ESM1.2-LR\nregression\n(NAHosMIP)', xy=(1.02, 0.82 if season=='' else 0.795 if season=='djf' else 0.84), xytext=(1.25, 0.49), xycoords='axes fraction', ha='center', va='center', fontsize=5, color='black' if not plot_bg=='black' else 'white', fontweight='bold', arrowprops={'arrowstyle': '-|>', 'connectionstyle': 'angle3,angleA=90,angleB=-10', 'color':functions.hosmip_colors['MPI-ESM1-2-LR'], 'lw': 0.75, 'mutation_scale': 5})
     if season == '':
-        ax_left_2.annotate('Combined forcing\nCESM2\nregression\n(Boot et al. 2024)', xy=(0.64, 0.59), xytext=(1.25, -0.1), xycoords='axes fraction', ha='center', va='center', fontsize=10, color='dodgerblue', fontweight='bold', arrowprops={'arrowstyle': '-|>', 'connectionstyle': 'angle3,angleA=200,angleB=150', 'color':'dodgerblue'})
+        ax_left_2.annotate('Combined forcing\nCESM2\nregression\n(Boot et al. 2024)', xy=(0.64, 0.59), xytext=(1.25, -0.1), xycoords='axes fraction', ha='center', va='center', fontsize=5, color='black' if not plot_bg=='black' else 'white', fontweight='bold', arrowprops={'arrowstyle': '-|>', 'connectionstyle': 'angle3,angleA=200,angleB=150', 'color':'dodgerblue', 'lw': 0.75, 'mutation_scale': 5})
 
     # Pass cmip_cooling_ds only when the overlay should be shown; passing
     # None disables the entire overlay (legend entries + markers). The
@@ -200,7 +210,7 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
     # cmip_range_show swaps the NAHosMIP min-max bar for the Synthetic CMIP6
     # range (direct + rescaled + synthetic cooling sensitivities).
     cr_ds_for_plot = cmip_range_ds if cmip_range_show else None
-    functions.plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_ds_dict=hosmip_reg_ds_dict, season=season, hosmip_markers=hosmip_markers, T_ref=T_ref, plot_bg=plot_bg, ext_ax=ax_right, title=False, reg_ds_giss=reg_ds_giss, giss_time_period=giss_time_period, cmip_cooling_ds=cc_ds_for_plot, cmip_cooling_decade=None, aggregate_first=aggregate_first, amoc_extent=_ext, weakening_unit=weakening_unit, sv_xmax=sv_xmax_e, cmip_range_ds=cr_ds_for_plot, cmip_range_mode=cmip_range_mode, nahosmip_overlay=nahosmip_overlay)
+    functions.plot_net_cooling_ranges_mpi_cesm(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_ds_dict=hosmip_reg_ds_dict, season=season, hosmip_markers=hosmip_markers, T_ref=T_ref, plot_bg=plot_bg, ext_ax=ax_right, title=False, reg_ds_giss=reg_ds_giss, giss_time_period=giss_time_period, cmip_cooling_ds=cc_ds_for_plot, cmip_cooling_decade=None, aggregate_first=aggregate_first, amoc_extent=_ext, weakening_unit=weakening_unit, sv_xmax=sv_xmax_e, cmip_range_ds=cr_ds_for_plot, cmip_range_mode=cmip_range_mode, nahosmip_overlay=nahosmip_overlay, likely_range=likely_range)
 
     # Align ax_right vertically with the left column (top of ax_left_1, bottom of ax_left_4)
     # The AMOC projection bars/text above the upper x-axis overflow by ~5% of axes height,
@@ -254,11 +264,13 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
               if (cmip_range_ds is not None and cmip_range_show) else '_cr-off')
     hosov_tag = ('_hosov-on' if (nahosmip_overlay and cmip_range_ds is not None
                                  and cmip_range_show) else '')
-    vwb_tag = '_vwb-on' if vwb_data else '_vwb-off'
-    savepath = f"../plots/Fig3_plotbg-{plot_bg}_season-{season or 'annual'}_Tref-{T_ref}_mark-{'on' if hosmip_markers else 'off'}{giss_tag}{cc_tag}{agg_tag}{wunit_tag}{cr_tag}{hosov_tag}{vwb_tag}{functions.fw_suffix(future_window)}"
+    lik_tag = '_lik-on' if likely_range else ''
+    vwb_tag = (f'_vwb-{_vwbw}' if _vwbw != next(iter(functions.VWB_GHG_WINDOWS)) else '_vwb-on') if vwb_data else '_vwb-off'
+    savepath = f"../plots/Fig3_plotbg-{plot_bg}_season-{season or 'annual'}_Tref-{T_ref}_mark-{'on' if hosmip_markers else 'off'}{giss_tag}{cc_tag}{agg_tag}{wunit_tag}{cr_tag}{hosov_tag}{lik_tag}{vwb_tag}{functions.fw_suffix(future_window)}"
     functions.check_savepath(savepath)
-    fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight', transparent=True if plot_bg=='black' else False)
-    fig.savefig(savepath + '.pdf', bbox_inches='tight', dpi=400, transparent=True if plot_bg=='black' else False)
+    functions.fit_print_width(fig)
+    fig.savefig(savepath + '.png', dpi=300, bbox_inches='tight', transparent=True if plot_bg=='black' else False)
+    fig.savefig(savepath + '.pdf', bbox_inches='tight', dpi=600, transparent=True if plot_bg=='black' else False)
 
     return fig, savepath
 
@@ -270,13 +282,14 @@ if __name__ == '__main__':
     plot_bg = 'white'  # 'white' or 'black'
     window = 10
     season = ''
-    T_ref = 'pi'  # 'pi' or 'pd'
+    T_ref = cmip_range_T_ref  # 'pi' or 'pd', set in the LOAD DATA cell (selects the range cache)
     hosmip_markers = False
     giss_time_period = '2101-2300'  # '2101-2300' or '2015-2500'
     cmip_cooling_show = False
     cmip_range_show = True   # True -> Synthetic CMIP6 range in panel e
     cmip_range_mode = 'medians'  # 'medians' (IQR + median + faint min-max) | 'mc' (draw quartiles)
     nahosmip_overlay = False  # True -> hatch the NAHosMIP min-max on top (appendix)
+    likely_range = False  # True -> likely range of constrained weakening (Portmann et al. 2026) on the projection strip
     aggregate_first = True
     weakening_unit = 'pct'  # 'pct' (% weakening vs PI) or 'sv' (absolute Sv weakening); 'sv' requires aggregate_first=True
     future_window = None  # None -> canonical 2091-2100; e.g. ('2081','2090') for a sensitivity variant
@@ -306,5 +319,5 @@ if __name__ == '__main__':
                                 cmip_range_statedep=cmip_range_statedep,
                                 cmip_range_calset=cmip_range_calset,
                                 cmip_range_predictors=cmip_range_predictors,
-                                nahosmip_overlay=nahosmip_overlay)
+                                nahosmip_overlay=nahosmip_overlay, likely_range=likely_range)
 # %%

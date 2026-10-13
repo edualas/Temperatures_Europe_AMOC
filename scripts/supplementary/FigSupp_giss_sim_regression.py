@@ -33,6 +33,7 @@ import pickle
 import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
+import matplotlib.transforms as mtransforms
 from matplotlib.gridspec import GridSpec
 from matplotlib.lines import Line2D
 from matplotlib.pyplot import cm
@@ -47,6 +48,8 @@ PROC_DIR = '/work/bu1431/T_EU_AMOC/CMIP6/giss-e2-1-g/processed'
 if not os.path.isdir(PROC_DIR):  # off-Levante: mirrored to data/giss_processed
     PROC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             '..', '..', 'data', 'giss_processed')
+if functions.DATA_MODE == 'package':
+    PROC_DIR = functions.GISS_PROCESSED_PATH.rstrip('/')
 
 MEMBERS = [f'r{i}i1p1f2' for i in range(1, 11)]
 COMPOSITE = ['r3i1p1f2', 'r4i1p1f2', 'r10i1p1f2']
@@ -202,14 +205,16 @@ def _clean_axes(ax, hide_bottom=False):
 def make_figure(amoc_smooth, tas_eu_smooth, amoc_comp_smooth, tas_eu_comp_smooth,
                 amoc_anom, tas_eu, plot_bg='white', season=''):
     plt.style.use('default')
-    plt.rcParams.update({'font.size': 10})
+    plt.rcParams.update(functions.PRINT_RC)
     if plot_bg == 'black':
         plt.style.use('dark_background')
         plt.rcParams['axes.facecolor'] = '#191919'
         plt.rcParams['figure.facecolor'] = '#191919'
     fg = 'black' if plot_bg != 'black' else 'white'
 
-    fig = plt.figure(figsize=(16, 8))
+    canvas_w = 218  # mm (old 16 in × s = 0.536); the tight crop is 183 mm (fit_print_width)
+    fig = plt.figure(figsize=(canvas_w / 25.4, canvas_w / 25.4 / 2))
+    fig.set_size_inches(canvas_w / 25.4, canvas_w / 25.4 / 2, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
     # gs[0,1] is intentionally left empty — the legend and regression-
     # equation block live in that vertical slot above ax_reg, matching
     # Fig1's layout.
@@ -234,23 +239,22 @@ def make_figure(amoc_smooth, tas_eu_smooth, amoc_comp_smooth, tas_eu_comp_smooth
     end_x_offset = 5  # years; small horizontal offset so marker sits clear of line
     for r in MEMBERS:
         ax_top.plot(years, amoc_smooth.sel(realiz=r).values,
-                    color=member_color[r], lw=0.9, alpha=0.85)
+                    color=member_color[r], lw=0.48, alpha=0.85)
         ax_top.plot(years[end_idx] + end_x_offset,
                     amoc_smooth.sel(realiz=r).values[end_idx],
                     marker=member_marker[r], color=member_color[r],
-                    markersize=3, linestyle='None', clip_on=False)
+                    markersize=1.8, linestyle='None', clip_on=False)
     ax_top.plot(years, amoc_comp_smooth.values,
-                color=composite_color, lw=2.2)
+                color=composite_color, lw=1)
     # ax_top.plot(years[end_idx] + end_x_offset,
     #             amoc_comp_smooth.values[end_idx],
     #             marker='o', color=composite_color, markersize=8,
     #             linestyle='None', clip_on=False)
-    ax_top.axhline(0, color=fg, lw=1., ls='--', alpha=0.5)
-    ax_top.axvline(2014.5, color=fg, lw=0.6, ls=':', alpha=0.6)
+    ax_top.axhline(0, color=fg, lw=0.54, ls='--', alpha=0.5)
+    ax_top.axvline(2014.5, color=fg, lw=0.4, ls=':', alpha=0.6)
     ax_top.text(2014.5, ax_top.get_ylim()[1], ' SSP2-4.5', color=fg,
-                fontsize=8, va='top', ha='left', alpha=0.7)
-    ax_top.set_ylabel(r'$\Delta\mathrm{AMOC}$ @ 26.5°N [Sv]'
-                      '\nw.r.t. 1850–1899')
+                fontsize=6, va='top', ha='left', alpha=0.7)
+    ax_top.set_ylabel('ΔAMOC at 26.5°N (Sv)\nw.r.t. 1850–1899')
     ax_top.set_xticks(np.arange(1900, 2501, 100))
 
     # Secondary % weakening axis on the right of ax_top, capped at [0, 80]%.
@@ -274,7 +278,7 @@ def make_figure(amoc_smooth, tas_eu_smooth, amoc_comp_smooth, tas_eu_comp_smooth
     secax.set_yticklabels([f'{t:.0f}' for t in
                            np.arange(SEC_PCT_RANGE[0], SEC_PCT_RANGE[1] + 1, 20)])
     secax.yaxis.tick_right(); secax.yaxis.set_label_position('right')
-    secax.set_ylabel('AMOC weakening w.r.t. 1850–1899 [%]', labelpad=5)
+    secax.set_ylabel('AMOC weakening (%)\nw.r.t. 1850–1899', labelpad=2.7)
     for s in ('top', 'left', 'bottom'):
         secax.spines[s].set_visible(False)
     secax.tick_params(axis='x', which='both', bottom=False, top=False,
@@ -284,21 +288,21 @@ def make_figure(amoc_smooth, tas_eu_smooth, amoc_comp_smooth, tas_eu_comp_smooth
     # ----- panel b: EU-mean tas anomaly -----
     for r in MEMBERS:
         ax_bot.plot(years, tas_eu_smooth.sel(realiz=r).values,
-                    color=member_color[r], lw=0.9, alpha=0.85)
+                    color=member_color[r], lw=0.48, alpha=0.85)
         ax_bot.plot(years[end_idx] + end_x_offset,
                     tas_eu_smooth.sel(realiz=r).values[end_idx],
                     marker=member_marker[r], color=member_color[r],
-                    markersize=3, linestyle='None', clip_on=False)
+                    markersize=1.8, linestyle='None', clip_on=False)
     ax_bot.plot(years, tas_eu_comp_smooth.values,
-                color=composite_color, lw=2.2)
+                color=composite_color, lw=1)
     # ax_bot.plot(years[end_idx] + end_x_offset,
     #             tas_eu_comp_smooth.values[end_idx],
     #             marker='o', color=composite_color, markersize=8,
     #             linestyle='None', clip_on=False)
-    ax_bot.axhline(0, color=fg, lw=1., ls='--', alpha=0.5)
-    ax_bot.axvline(2014.5, color=fg, lw=0.6, ls=':', alpha=0.6)
+    ax_bot.axhline(0, color=fg, lw=0.54, ls='--', alpha=0.5)
+    ax_bot.axvline(2014.5, color=fg, lw=0.4, ls=':', alpha=0.6)
     season_tag_y = '' if season == '' else f' ({season.upper()})'
-    ax_bot.set_ylabel(rf'$\Delta\mathrm{{T}}_\mathrm{{EU}}${season_tag_y} [°C]'
+    ax_bot.set_ylabel(rf'$\Delta\mathrm{{T}}_\mathrm{{EU}}${season_tag_y} (°C)'
                       '\nw.r.t. 1850–1899')
     ax_bot.set_xlabel('')
     ax_bot.set_xticks(np.arange(1900, 2501, 100))
@@ -331,7 +335,7 @@ def make_figure(amoc_smooth, tas_eu_smooth, amoc_comp_smooth, tas_eu_comp_smooth
     for r in NON_COMPOSITE:
         x = amoc_dev_s.sel(realiz=r, time=slice(*REG_TIME)).values
         y = tas_dev_s.sel(realiz=r, time=slice(*REG_TIME)).values
-        ax_reg.scatter(x, y, s=15, color=member_color[r],
+        ax_reg.scatter(x, y, s=4.3, color=member_color[r],
                        marker=member_marker[r], alpha=0.8,
                        edgecolors='none', clip_on=False)
 
@@ -339,17 +343,19 @@ def make_figure(amoc_smooth, tas_eu_smooth, amoc_comp_smooth, tas_eu_comp_smooth
     for win, ccol, m, xc, yc in century_fits:
         xx = np.linspace(np.nanmin(xc), np.nanmax(xc), 100)
         yy = m.params[0] + m.params[1] * xx
-        ax_reg.plot(xx, yy, color=ccol, lw=1.2)
+        ax_reg.plot(xx, yy, color=ccol, lw=0.64)
 
     # Main fit line (full REG_TIME, thick).
     xx = np.linspace(np.nanmin(x_fit), np.nanmax(x_fit), 100)
     yy = model.params[0] + model.params[1] * xx
-    ax_reg.plot(xx, yy, color=fg, lw=2.2)
+    ax_reg.plot(xx, yy, color=fg, lw=1)
 
-    ax_reg.axhline(0, color=fg, lw=1., ls='--', alpha=0.6)
-    ax_reg.axvline(0, color=fg, lw=1., ls='--', alpha=0.6)
-    ax_reg.set_xlabel(r'$\Delta\mathrm{AMOC}$ = member − composite [Sv]')
-    ax_reg.set_ylabel(rf'$\Delta\mathrm{{T}}_\mathrm{{EU}}${season_tag_y} = member − composite [°C]')
+    ax_reg.axhline(0, color=fg, lw=0.54, ls='--', alpha=0.6)
+    ax_reg.axvline(0, color=fg, lw=0.54, ls='--', alpha=0.6)
+    for _lim, _set, _t in ((ax_reg.get_xlim(), ax_reg.set_xlim, ax_reg.get_xticks()), (ax_reg.get_ylim(), ax_reg.set_ylim, ax_reg.get_yticks())):
+        _set(_t[_t <= _lim[0]].max(), _t[_t >= _lim[1]].min())  # widen to the enclosing ticks: axes end on ticks
+    ax_reg.set_xlabel('ΔAMOC = member − composite (Sv)')
+    ax_reg.set_ylabel(rf'$\Delta\mathrm{{T}}_\mathrm{{EU}}${season_tag_y} = member − composite (°C)')
 
     # ----- Apply Fig1 spine convention to all three panels -----
     _clean_axes(ax_top, hide_bottom=True)
@@ -361,53 +367,53 @@ def make_figure(amoc_smooth, tas_eu_smooth, amoc_comp_smooth, tas_eu_comp_smooth
     # the composite mean (used in panels a and b).
     member_handles = [Line2D([0], [0], color=member_color[r],
                              marker=member_marker[r], linestyle='None',
-                             markersize=7,
+                             markersize=3.75,
                              label=r + ('  (composite)' if r in COMPOSITE else ''))
                       for r in MEMBERS]
-    composite_handle = Line2D([0], [0], color=composite_color, lw=2.2,
+    composite_handle = Line2D([0], [0], color=composite_color, lw=1,
                               label=f'composite mean (mean of r3, r4, r10)')
     legend = ax_reg.legend(handles=member_handles + [composite_handle],
                            ncol=2, frameon=False,
                            bbox_to_anchor=(-0.04, 2.15), loc='upper left',
-                           fontsize=9, handletextpad=1.0, columnspacing=2)
+                           fontsize=6, handletextpad=0.5, columnspacing=1.5)
 
     # ----- Regression-equation text block (separate from the legend) -----
     # Six rows: full 2015–2500 (bold, fg colour) + 5 century fits
     # (coloured to match the lines drawn in panel c). Sits between the
     # legend and the top of panel c, mirroring Fig1's `equation_y_pos`
     # convention.
+    # Equation rows as in Fig. 1c: keyline in the line's colour, black text (no coloured text); offsets in pt.
     equation_y_pos, equation_y_spacing = 1.50, 0.075
-    ax_reg.text(0.0, equation_y_pos + equation_y_spacing,
-                'Regression results:',
-                transform=ax_reg.transAxes, fontsize=10, va='top',
-                color=fg, fontweight='bold')
-    ax_reg.text(0.0, equation_y_pos,
-                (f'{REG_TIME[0]}–{REG_TIME[1]}:  '
-                 f'y = {model.params[1]:+.3f}·x {model.params[0]:+.3f},  '
-                 f'R² = {model.rsquared:.2f}  '
-                 f'(SE {model.bse[1]:.3f})'),
-                transform=ax_reg.transAxes, fontsize=9, va='top',
-                color=fg, fontweight='bold')
-    for i, (win, ccol, m, _, _) in enumerate(century_fits, start=1):
-        ax_reg.text(0.0, equation_y_pos - i * equation_y_spacing,
-                    (f'{win[0]}–{win[1]}:  '
-                     f'y = {m.params[1]:+.3f}·x {m.params[0]:+.3f},  '
-                     f'R² = {m.rsquared:.2f}'),
-                    transform=ax_reg.transAxes, fontsize=9, va='top',
-                    color=ccol)
+    key = lambda: mtransforms.offset_copy(ax_reg.transAxes, fig=fig, y=1.8, units='points')
+    ax_reg.text(0.0, equation_y_pos + equation_y_spacing, 'Regression results:',
+                transform=ax_reg.transAxes, fontsize=6, va='baseline', color=fg, fontweight='bold')
+    rows = [(REG_TIME, fg, model, f',  R² = {model.rsquared:.2f}  (SE {model.bse[1]:.3f})')] + \
+           [(win, ccol, m, f',  R² = {m.rsquared:.2f}') for win, ccol, m, _, _ in century_fits]
+    for i, (win, ccol, m, tail) in enumerate(rows):
+        y = equation_y_pos - i * equation_y_spacing
+        ax_reg.annotate('', (0, y), xycoords=key(), xytext=(6, 0), textcoords='offset points',
+                        arrowprops=dict(arrowstyle='-', color=ccol, lw=1 if i == 0 else 0.64, shrinkA=0, shrinkB=0))
+        ax_reg.annotate((f'{win[0]}–{win[1]}:  y = {m.params[1]:+.3f}·x {m.params[0]:+.3f}' + tail).replace('-', '−'),
+                        (0, y), xycoords='axes fraction', xytext=(8.5, 0), textcoords='offset points', va='baseline',
+                        fontsize=6, color=fg, fontweight='bold' if i == 0 else 'normal')
 
     # ----- Subplot labels -----
+    fig.draw_without_rendering()  # y-label extents, so each letter clears its panel's label (as Fig. 1 letter c)
+    lab_x = lambda ax: min(ax.get_position().x0 - 0.03, ax.yaxis.label.get_window_extent().transformed(fig.transFigure.inverted()).x0 - 0.004)
+    x_ab = min(lab_x(ax_top), lab_x(ax_bot))  # a and b aligned
     for i, ax in enumerate([ax_top, ax_bot, ax_reg]):
         bb = ax.get_position()
-        fig.text(bb.x0 - 0.03, bb.y1, 'abc'[i], fontsize=14,
+        x_l = x_ab if i < 2 else lab_x(ax)
+        fig.text(x_l, bb.y1, 'abc'[i], fontsize=8,
                  ha='right', va='center', fontweight='bold', color=fg)
 
     os.makedirs(PLOTS_DIR, exist_ok=True)
     out = (f'{PLOTS_DIR}/FigSupp_giss_sim_regression_plotbg-{plot_bg}'
            f'_window-{WINDOW}_season-{season or "annual"}')
-    fig.savefig(out + '.png', dpi=200, bbox_inches='tight',
+    functions.fit_print_width(fig)
+    fig.savefig(out + '.png', dpi=300, bbox_inches='tight',
                 transparent=(plot_bg == 'black'))
-    fig.savefig(out + '.pdf', dpi=400, bbox_inches='tight',
+    fig.savefig(out + '.pdf', dpi=600, bbox_inches='tight',
                 transparent=(plot_bg == 'black'))
     print(f'wrote {out}.png/.pdf')
     return fig, out

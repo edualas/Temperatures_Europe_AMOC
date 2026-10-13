@@ -181,7 +181,7 @@ def get_target_wt(recompute=False, models=None, scenarios=MAIN_SSPS, region='EU'
                 ens = tas_ens if not _s else season_ens(model, sce, tas_used, _s)
                 eu = functions.weighted_area_lat(
                     ens.where(masks_m[region]).where(masks_m['LAND'] == 0)
-                ).mean('lat').mean('lon')
+                ).mean(('lat', 'lon'))
                 tas_pi_eu = float(eu.sel(time=base).mean('time'))
                 tas_pi_eu_out[mi, si, zi] = tas_pi_eu
                 t_out[mi, si, zi] = float(eu.sel(time=fut).mean('time')) - tas_pi_eu
@@ -226,6 +226,10 @@ def target_wt_model_multi(model, regions, scenarios=MAIN_SSPS, seasons=SEASONS,
     AMOC is opened once per scenario. ``future_window`` defaults to the
     canonical 2091-2100 (functions.FUTURE_WINDOW); a decade override shifts
     the (w, t) evaluation window only, the baseline stays 1850-1899.
+    ``baseline_tas_pd`` (region, season) is the present-day reference
+    1991-2014 historical + 2015-2020 ssp245, taken from the ssp245 ensemble
+    (functions.PD_* windows, as T_pd_245 in the reg_ds); NaN if ssp245 is
+    not among ``scenarios``.
     """
     import cmip6_inventory
     regions = list(regions)
@@ -238,6 +242,8 @@ def target_wt_model_multi(model, regions, scenarios=MAIN_SSPS, seasons=SEASONS,
     amoc_pi_arr = np.full(n_s, np.nan)
     t = np.full((n_s, n_r, n_z), np.nan)
     tas_pi = np.full((n_s, n_r, n_z), np.nan)
+    tas_pd = np.full((n_r, n_z), np.nan)
+    pd_win = slice(functions.PD_HIS_WINDOW[0], functions.PD_SSP_WINDOW[1])
     n_real = np.zeros(n_s, dtype=np.int32)
 
     masks_m = None
@@ -288,19 +294,24 @@ def target_wt_model_multi(model, regions, scenarios=MAIN_SSPS, seasons=SEASONS,
                     continue
                 rm = functions.weighted_area_lat(
                     ens.where(masks_m[r]).where(masks_m['LAND'] == 0)
-                ).mean('lat').mean('lon')
+                ).mean(('lat', 'lon'))
                 tas_pi[si, ri, zi] = float(rm.sel(time=base).mean('time'))
                 t[si, ri, zi] = float(rm.sel(time=fut).mean('time')) - tas_pi[si, ri, zi]
+                if sce == 'ssp245':
+                    tas_pd[ri, zi] = float(rm.sel(time=pd_win).mean('time'))
 
     return xr.Dataset(
         {'w': (('scenario',), w),
          'baseline_amoc': (('scenario',), amoc_pi_arr),
          'n_real': (('scenario',), n_real),
          't': (('scenario', 'region', 'season'), t),
-         'baseline_tas': (('scenario', 'region', 'season'), tas_pi)},
+         'baseline_tas': (('scenario', 'region', 'season'), tas_pi),
+         'baseline_tas_pd': (('region', 'season'), tas_pd)},
         coords={'scenario': list(scenarios), 'region': regions,
                 'season': seasons, 'model': cmip6_inventory.to_esgf(model)},
         attrs={'baseline': '1850-1899', 'future_window': f'{fw[0]}-{fw[1]}',
+               'baseline_pd': f'{functions.PD_HIS_WINDOW[0]}-{functions.PD_HIS_WINDOW[1]} historical + '
+                              f'{functions.PD_SSP_WINDOW[0]}-{functions.PD_SSP_WINDOW[1]} ssp245',
                'land_filter': 'LAND==0 for every region (build_table convention)'})
 
 
@@ -396,13 +407,13 @@ def calibration_arrays(table, ssps=MAIN_SSPS):
 # The calibration configurations, as (models dropped from the s~w fit,
 # models dropped from the state-dependence observations/pairs, require full
 # SSP coverage). Since 2026-08-31 the default is 'hosing' (renamed from
-# 'nogiss' the same day, Felix: the old name misled under pooled, where GISS
+# 'nogiss' the same day: the old name misled under pooled, where GISS
 # stays in the state fit and the range — 'hosing' says positively that the
 # calibration line is fit on the 8 hosing models). Every other set is defined
 # RELATIVE to it, so a sweep variant differs from the default by exactly one
-# knob (Felix, 2026-08-31): 'full' adds GISS back to the fit, 'nocesm2'
+# knob: 'full' adds GISS back to the fit, 'nocesm2'
 # additionally removes CESM2, 'consistentssp' additionally requires full SSP
-# coverage. The default's GISS exclusion is FIT-ONLY (Felix, 2026-08-31):
+# coverage. The default's GISS exclusion is FIT-ONLY:
 # GISS's warm-state slope is inconsistent inside the PI-state s~w line but
 # remains a legitimate warm-background observation, so the state-dependence
 # fits keep GISS's warm row under every set; only 'nocesm2' removes a model
@@ -516,7 +527,8 @@ def w_net_draws(s_draws, w, t):
 # STATE-DEPENDENCE FACTORS
 
 STATE_DEPS = ('none', 'dummy', 'pooled', 'loglin', 'interact')
-BM_FIG2_FILE = functions.local_path + 'Bellomo2024_plotting_data/data_figs_2_S3.nc'
+BM_FIG2_FILE = functions.local_path + ('Bellomo2024_plotting_data/data_figs_2_S3.nc' if functions.DATA_MODE == 'raw'
+                                       else 'Bellomo2024_plotting_data/data_figs_2_S3_warming.nc')  # data package: warming only
 
 
 def state_dep_factors(region, *, multi_model_dict, hosmip_reg_ds_dict,
@@ -549,7 +561,7 @@ def state_dep_factors(region, *, multi_model_dict, hosmip_reg_ds_dict,
     2026-08-17 membership was cal_set-independent, which made cal-nocesm2 x
     sdep-pooled bit-identical to cal-full in panel b while panel a advertised
     the exclusion. `consistentssp`'s coverage requirement reaches only the
-    pooled/interact observations (2026-08-20), scoped by Felix to the variants
+    pooled/interact observations (2026-08-20), scoped to the variants
     forwarded to Fig3. The pair set behind dummy/loglin therefore keeps the
     partial-coverage models; note loglin's gamma anchor is the EC-Earth3 pair,
     which consistentssp would otherwise remove. `pairs_all` in the return dict
@@ -616,7 +628,7 @@ def state_dep_factors(region, *, multi_model_dict, hosmip_reg_ds_dict,
         bm2 = xr.open_dataset(BM_FIG2_FILE)
         bm2.coords['lon'] = (bm2.coords['lon'] + 180) % 360 - 180
         bm2 = bm2.sortby(bm2.lon)
-        g4x = region_mean(bm2.tas_4x - bm2.tas_pi, ece.mask)
+        g4x = region_mean(bm2.warming if 'warming' in bm2 else bm2.tas_4x - bm2.tas_pi, ece.mask)
         rho_ece = rho.get('EC-Earth3', np.nan)
         gamma = (np.log(rho_ece) / g4x
                  if np.isfinite(rho_ece) and rho_ece > 0 and np.isfinite(g4x) and g4x > 0
@@ -866,16 +878,22 @@ def range_for_region(region, *, w_mean_targets, wt_ds, multi_model_dict,
                      gwl_data, ssps=MAIN_SSPS, n_draws=20000, seed=0,
                      state_dep='none', reg_ds_mpi=None, reg_ds_cesm=None,
                      gamma_fallback=None, origin=False, predictors='w',
-                     cal_set=DEFAULT_CAL_SET, season='', verbose=True):
+                     cal_set=DEFAULT_CAL_SET, season='', T_ref='pi', verbose=True):
     """One region's calibration fit + per-model best estimates + pooled MC.
+
+    T_ref='pd' references the warming in the w_net numerator (and dT_*) to
+    1991-2020 instead of 1850-1899; w stays % of the 1850-1899 AMOC and the
+    slopes / state-dependence keep their PI-referenced warming (as
+    req_weakening_pd for the panel's direct markers). Only predictors='w'
+    without loglin, whose t covariate is calibrated on PI warming.
 
     Best estimates: per-target unconditional median of w_net draws (inf =
     median draw never cools) + point w_net for the directly estimated models.
     Pooled MC: n_draws per target + n_draws point-mass copies per direct
     model (equal per-model weight).
 
-    Membership (the "Synthetic CMIP6 range", evidence rule / option B, Felix
-    + coauthor 2026-08-31): each range contains every model that has an
+    Membership (the "Synthetic CMIP6 range", evidence rule / option B,
+    2026-08-31): each range contains every model that has an
     estimate of the quantity the range describes, at its best available
     estimate, independent of cal_set (which only restricts what enters the
     estimation of synthetic cooling sensitivities). PI-state range
@@ -885,6 +903,9 @@ def range_for_region(region, *, w_mean_targets, wt_ds, multi_model_dict,
     models (incl. EC-Earth3, whose 4xCO2 value is not an SSP-context
     estimate) at s_pi x rho, targets on the warm line / rescaled draws.
     """
+    assert T_ref in ('pi', 'pd')
+    assert T_ref == 'pi' or (predictors == 'w' and state_dep != 'loglin'), \
+        "T_ref='pd' needs predictors='w' and state_dep != 'loglin'"
     targets = list(w_mean_targets.index)
     table = sfc.build_table(multi_model_dict, hosmip_reg_ds_dict,
                             reg_ds_giss, giss_panel_ext, masks, gwl_data,
@@ -957,14 +978,17 @@ def range_for_region(region, *, w_mean_targets, wt_ds, multi_model_dict,
             w0 = float(w_tab.loc[m, ssp])
             t0 = float(wt_ds.t.sel(model=m, scenario=ssp, region=region,
                                    season=season))
-            if not (np.isfinite(w0) and np.isfinite(t0)):
+            tn = t0 if T_ref == 'pi' else t0 - float(
+                wt_ds.baseline_tas_pd.sel(model=m, region=region, season=season)
+                - wt_ds.baseline_tas.sel(model=m, scenario=ssp, region=region, season=season))
+            if not (np.isfinite(w0) and np.isfinite(tn)):
                 continue
             s_i = s_draws[i]
             if rho_draws is not None:
                 s_i = s_i * rho_draws
             elif state_dep == 'loglin':
                 s_i = s_i * np.exp(sdf['gamma'] * t0)
-            wn = w_net_draws(s_i, w0, t0)
+            wn = w_net_draws(s_i, w0, tn)
             v = float(np.percentile(wn, 50, method='lower'))
             members[str(m)] = v
             best.append(v)
@@ -972,13 +996,14 @@ def range_for_region(region, *, w_mean_targets, wt_ds, multi_model_dict,
             n_t += 1
             members_dT[str(m)] = {}
             for wl in DT_W_LEVELS:
-                dv = float(np.median(t0 + s_i * (wl - w0)))
+                dv = float(np.median(tn + s_i * (wl - w0)))
                 dT_best[wl].append(dv)
                 members_dT[str(m)][wl] = dv
         for m, info in table.items():
             # Membership: evidence rule (option B), see docstring.
             w0 = info['weakening'].get(ssp, np.nan)
             t0 = info['warming'].get(ssp, np.nan)
+            tn = t0 if T_ref == 'pi' else info.get('warming_pd', {}).get(ssp, np.nan)
             slope = info['slope']
             if state_dep == 'none':
                 if m == 'GISS-E2-1-G':
@@ -987,15 +1012,15 @@ def range_for_region(region, *, w_mean_targets, wt_ds, multi_model_dict,
                 slope = sdf['pairs_all'][m]['s_warm']   # measured warm slope
             elif m != 'GISS-E2-1-G':
                 slope = slope * central_rho(sdf, state_dep, warming=t0, weakening=w0)
-            if not (np.isfinite(w0) and np.isfinite(t0) and np.isfinite(slope)):
+            if not (np.isfinite(w0) and np.isfinite(tn) and np.isfinite(slope)):
                 continue
-            v = w0 + t0 / (-slope) if slope < 0 else np.inf
+            v = w0 + tn / (-slope) if slope < 0 else np.inf
             members[m] = v
             best.append(v)
             pooled.append(np.full(n_draws, v))
             members_dT[m] = {}
             for wl in DT_W_LEVELS:
-                dv = float(t0 + slope * (wl - w0))
+                dv = float(tn + slope * (wl - w0))
                 dT_best[wl].append(dv)
                 members_dT[m][wl] = dv
         best = np.asarray(best)
@@ -1061,7 +1086,7 @@ def range_worker(region):
 
 
 def range_cache_path(state_dep='none', origin=False, cal_set=DEFAULT_CAL_SET,
-                     season='', predictors='w', future_window=None):
+                     season='', predictors='w', future_window=None, T_ref='pi'):
     """Defaults ('none', free intercept, hosing calibration, annual, w
     predictors, 2091-2100 window) keep the base cache path; every other
     combination gets its own file. The untagged base has re-meant twice
@@ -1082,6 +1107,8 @@ def range_cache_path(state_dep='none', origin=False, cal_set=DEFAULT_CAL_SET,
     fw = tuple(future_window) if future_window is not None else functions.FUTURE_WINDOW
     if fw != functions.FUTURE_WINDOW:
         p = p.replace('.nc', f'_fw{fw[0]}-{fw[1]}.nc')
+    if T_ref != 'pi':
+        p = p.replace('.nc', f'_tref-{T_ref}.nc')
     return p
 
 
@@ -1090,7 +1117,8 @@ def get_cmip_range_ds(recompute=False, *, multi_model_dict=None,
                       gwl_data=None, ssps=MAIN_SSPS, n_draws=20000, seed=0,
                       state_dep='none', reg_ds_mpi=None, reg_ds_cesm=None,
                       origin=False, predictors='w', cal_set=DEFAULT_CAL_SET,
-                      season='', future_window=None, processes=1, verbose=True):
+                      season='', future_window=None, T_ref='pi', processes=1,
+                      verbose=True):
     """Per-(region, scenario) Synthetic CMIP6 range dataset for Fig3 panel e.
 
     Cached at range_cache_path(state_dep, origin, cal_set, season, predictors,
@@ -1102,13 +1130,15 @@ def get_cmip_range_ds(recompute=False, *, multi_model_dict=None,
     annual. A non-default `future_window` shifts the target (w, t) window AND
     must be matched by window-keyed reg inputs (reg_ds_mpi/cesm/giss and
     hosmip_reg_ds_dict loaded with the same future_window) — the direct
-    models' w0/t0 and the warm-state slopes come from those.
+    models' w0/t0 and the warm-state slopes come from those. `T_ref='pd'`
+    references the warming to 1991-2020 (see range_for_region); its cache
+    carries a `_tref-pd` tag and a T_ref attr (absent = 'pi').
     """
     import os
     assert cal_set in _CAL_SETS
     fw = tuple(future_window) if future_window is not None else functions.FUTURE_WINDOW
     fw_str = f'{fw[0]}-{fw[1]}'
-    cache_path = range_cache_path(state_dep, origin, cal_set, season, predictors, fw)
+    cache_path = range_cache_path(state_dep, origin, cal_set, season, predictors, fw, T_ref)
     if not recompute and os.path.exists(cache_path):
         if verbose:
             print(f"Loading cached CMIP range ds from {cache_path}")
@@ -1131,6 +1161,8 @@ def get_cmip_range_ds(recompute=False, *, multi_model_dict=None,
             f"cache at {cache_path} has seed={ds.attrs.get('seed')!r}"
         assert ds.attrs.get('future_window') == fw_str, \
             f"cache at {cache_path} has future_window={ds.attrs.get('future_window')!r} (need {fw_str})"
+        assert ds.attrs.get('T_ref', 'pi') == T_ref, \
+            f"cache at {cache_path} has T_ref={ds.attrs.get('T_ref', 'pi')!r} (need {T_ref!r})"
         return ds
 
     if multi_model_dict is None or hosmip_reg_ds_dict is None:
@@ -1147,6 +1179,9 @@ def get_cmip_range_ds(recompute=False, *, multi_model_dict=None,
             'state_dep != none needs reg_ds_mpi and reg_ds_cesm'
     regions = list(fig3_regions())
     wt_ds = get_target_wt_multi(recompute=False, regions=regions, future_window=fw)
+    assert T_ref == 'pi' or 'baseline_tas_pd' in wt_ds, (
+        "target (w, t) cache predates baseline_tas_pd; rebuild it on Levante "
+        "with get_target_wt_multi(recompute=True)")
     giss_panel_ext = functions.get_giss_panel_data(
         masks=masks, regions=('EU', 'NEU', 'WCE', 'MED')
         + tuple(functions.regions_cutoff30k), season=season, recompute=False)
@@ -1179,7 +1214,7 @@ def get_cmip_range_ds(recompute=False, *, multi_model_dict=None,
                       reg_ds_mpi=reg_ds_mpi, reg_ds_cesm=reg_ds_cesm,
                       gamma_fallback=gamma_fallback, origin=origin,
                       predictors=predictors, cal_set=cal_set, season=season,
-                      verbose=verbose)
+                      T_ref=T_ref, verbose=verbose)
     if processes > 1:
         import multiprocessing as mp
         with mp.get_context('fork').Pool(processes) as pool:
@@ -1205,12 +1240,13 @@ def get_cmip_range_ds(recompute=False, *, multi_model_dict=None,
                                   'w_level': list(DT_W_LEVELS)},
                     attrs={'schema_version': RANGE_SCHEMA_VERSION,
                            'n_draws': n_draws, 'seed': seed,
-                           'dT_at_w': 'dT_* [K vs 1850-1899] = model-level range of '
+                           'dT_at_w': f"dT_* [K vs {'1850-1899' if T_ref == 'pi' else '1991-2020'}] = model-level range of "
                                       't0 + s*(w_level - w0) at fixed weakening; same '
                                       'membership and best-estimate rule as w_net',
                            'predictors': predictors, 'cal_set': cal_set,
                            'state_dep': state_dep, 'origin': str(origin),
                            'season': season, 'future_window': fw_str,
+                           **({'T_ref': T_ref} if T_ref != 'pi' else {}),
                            'membership': 'evidence rule (B, 2026-08-31): every model '
                                          'with an estimate of the range quantity, at its '
                                          'best available estimate; measured warm slopes '
@@ -1440,14 +1476,16 @@ def make_figure(table=None, wt_ds=None, *,
     grey = '0.45' if plot_bg != 'black' else '0.65'
     if axes is None:
         plt.style.use('default')
-        plt.rcParams.update({'font.size': 12})
+        plt.rcParams.update({**functions.PRINT_RC, 'font.size': 6})  # 6 pt base (old 12 pt × s = 0.51)
         if plot_bg == 'black':
             plt.style.use('dark_background')
             plt.rcParams['axes.facecolor'] = '#191919'
             plt.rcParams['figure.facecolor'] = '#191919'
+        sc = 0.51  # print scale: old crop 359 mm → 183 mm (fit_print_width sets the exact canvas)
         fig, (ax_a, ax_b) = plt.subplots(
-            1, 2, figsize=(16, 0.30 * len(targets) + 1.6),
+            1, 2, figsize=(16 * sc, (0.30 * len(targets) + 1.6) * sc),
             gridspec_kw={'width_ratios': [1, 1.35]})
+        fig.set_size_inches(16 * sc, (0.30 * len(targets) + 1.6) * sc, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
     else:
         # Stacked use: draw into provided axes, styling owned by the caller.
         ax_a, ax_b = axes
@@ -1457,14 +1495,12 @@ def make_figure(table=None, wt_ds=None, *,
     xg = np.linspace(0, x_hi, 200)
     if predictors == 'w':
         Xg = xg
-        fit_label = (rf'OLS fit $\beta\sim\Delta$AMOC '
-                     f'(n={len(res["models"])}, R²={fit.rsquared:.2f})')
+        fit_label = f'OLS fit β ~ ΔAMOC (n={len(res["models"])}, R²={fit.rsquared:.2f})'
     else:
         # 2-D fit shown along the calibration's own warming-given-weakening line.
         fit_tw = sm.OLS(res['t'], sm.add_constant(res['w'])).fit()
         Xg = np.column_stack([xg, fit_tw.predict(sm.add_constant(xg))])
-        fit_label = (rf'OLS fit $\beta\sim(\Delta$AMOC$,\,\Delta T)$ at '
-                     rf'$\widehat{{\Delta T}}(\Delta$AMOC$)$ '
+        fit_label = (f'OLS fit β ~ (ΔAMOC, ΔT) at fitted ΔT(ΔAMOC) '
                      f'(n={len(res["models"])}, R²={fit.rsquared:.2f})')
     if state_dep in ('pooled', 'interact'):
         # Integrated fits: the band belongs to the WARM line (where the targets
@@ -1491,54 +1527,28 @@ def make_figure(table=None, wt_ds=None, *,
         lg, hg = np.percentile(gd, [2.5, 97.5], axis=1)
         ax_a.fill_between(xg, lg, hg, color=grey, alpha=0.18, linewidth=0,
                           label='95% prediction interval (warm)')
-        ax_a.plot(xg, base, color=text_color, lw=1.0, ls='--',
+        ax_a.plot(xg, base, color=text_color, lw=0.5, ls='--',
                   label='preindustrial line')
-        ax_a.plot(xg, warm_line, color=text_color, lw=1.6, label=warm_lab)
+        ax_a.plot(xg, warm_line, color=text_color, lw=0.8, label=warm_lab)
         for m, pr in sdf['pairs'].items():
             ax_a.scatter(cal[m]['w'], pr['s_warm'], color=cal[m]['color'],
-                         marker='X', s=80, edgecolors='black', linewidths=0.6,
+                         marker='X', s=20.8, edgecolors='black', linewidths=0.3,
                          zorder=4)
-        ax_a.scatter([], [], color=grey, marker='X', s=60, edgecolors='black',
-                     linewidths=0.6, label='warm-background sensitivity (pair / GISS)')
+        ax_a.scatter([], [], color=grey, marker='X', s=15.6, edgecolors='black',
+                     linewidths=0.3, label='warm-background sensitivity (pair / GISS)')
     else:
         mg, lg, hg = predict_synthetic(fit, Xg, origin=origin)
         ax_a.fill_between(xg, lg, hg, color=grey, alpha=0.18, linewidth=0,
                           label='95% prediction interval')
-        ax_a.plot(xg, mg, color=text_color, lw=1.2, label=fit_label)
-    # Hand-tuned label offsets per region: the calibration cloud is dense
-    # around w≈20-30 and its vertical arrangement shifts with the region's
-    # slopes. Unlisted regions fall back to the EU offsets (the cluster's
-    # relative arrangement is similar across regions; better than one
-    # shared generic offset, which overprints the whole cluster).
-    _lab_off = {
-        'EU': {'CanESM5': (8, -9, 'left'), 'EC-Earth3': (-2, -14, 'right'),
-               'CESM2': (7, 3, 'left'), 'IPSL-CM6A-LR': (2, -26, 'left'),
-               'HadGEM3-GC3-1MM': (7, -4, 'left'), 'HadGEM3-GC3-1LL': (4, 9, 'left'),
-               'MPI-ESM1-2-HR': (-5, 16, 'right'), 'MPI-ESM1-2-LR': (-9, -13, 'right'),
-               'GISS-E2-1-G': (7, 3, 'left')},
-        'IE': {'CanESM5': (8, -8, 'left'), 'EC-Earth3': (-2, -14, 'right'),
-               'CESM2': (7, 3, 'left'), 'IPSL-CM6A-LR': (2, -26, 'left'),
-               'HadGEM3-GC3-1MM': (9, -5, 'left'), 'HadGEM3-GC3-1LL': (4, 9, 'left'),
-               'MPI-ESM1-2-HR': (-5, 16, 'right'), 'MPI-ESM1-2-LR': (-9, -13, 'right'),
-               'GISS-E2-1-G': (7, 3, 'left')},
-        'NEU': {'CanESM5': (-7, -4, 'right'), 'EC-Earth3': (-4, -15, 'right'),
-                'CESM2': (7, 3, 'left'), 'IPSL-CM6A-LR': (-7, -13, 'right'),
-                'HadGEM3-GC3-1MM': (7, -4, 'left'), 'HadGEM3-GC3-1LL': (2, 9, 'left'),
-                'MPI-ESM1-2-HR': (7, -6, 'left'), 'MPI-ESM1-2-LR': (-9, -14, 'right'),
-                'GISS-E2-1-G': (7, 3, 'left')},
-    }
-    _lab_off = _lab_off.get(region, _lab_off['EU'])
+        ax_a.plot(xg, mg, color=text_color, lw=0.6, label=fit_label)
+    names = {'HadGEM3-GC3-1MM': 'HadGEM3-GC3.1-MM', 'HadGEM3-GC3-1LL': 'HadGEM3-GC3.1-LL',
+             'MPI-ESM1-2-HR': 'MPI-ESM1.2-HR', 'MPI-ESM1-2-LR': 'MPI-ESM1.2-LR'}  # as in the Fig. 3 legend
     # No SE whiskers on the calibration circles: the largest ±1 SE spans
     # 3-4% of the y-axis (about one marker diameter), invisible behind the
     # marker; the per-model ste stays in the sidecar.
-    for m in res['models']:
-        ax_a.scatter(cal[m]['w'], cal[m]['s'], color=cal[m]['color'],
-                     marker=cal[m]['marker'], s=80, edgecolors='black',
-                     linewidths=0.6, zorder=3)
-        dx, dy, ha = _lab_off.get(m, (5, 4, 'left'))
-        ax_a.annotate(m, xy=(cal[m]['w'], cal[m]['s']), xytext=(dx, dy),
-                      textcoords='offset points', fontsize=8, color=cal[m]['color'],
-                      ha=ha, zorder=5)
+    model_h = {names.get(m, m): ax_a.scatter(cal[m]['w'], cal[m]['s'], color=cal[m]['color'],
+                                              marker=cal[m]['marker'], s=20.8, edgecolors='black',
+                                              linewidths=0.3, zorder=3) for m in res['models']}
     # GISS has no PI slope, so it never enters res['models'] (fit-only
     # exclusion, _CAL_SPEC) — but it IS one of the warm observations behind
     # the pooled/interact state-dependence fit (state_dep_factors: 'GISS-E2-
@@ -1547,20 +1557,16 @@ def make_figure(table=None, wt_ds=None, *,
     # PI/warm pairs so panel a shows every observation that actually informs
     # the state-dep line, not just the three that also have a PI slope.
     if state_dep in ('pooled', 'interact') and 'GISS-E2-1-G' in cal:
-        ax_a.scatter(cal['GISS-E2-1-G']['w'], cal['GISS-E2-1-G']['s'],
-                     color=cal['GISS-E2-1-G']['color'], marker='X', s=80,
-                     edgecolors='black', linewidths=0.6, zorder=4)
-        dx, dy, ha = _lab_off.get('GISS-E2-1-G', (5, 4, 'left'))
-        ax_a.annotate('GISS-E2-1-G', xy=(cal['GISS-E2-1-G']['w'], cal['GISS-E2-1-G']['s']),
-                      xytext=(dx, dy), textcoords='offset points', fontsize=8,
-                      color=cal['GISS-E2-1-G']['color'], ha=ha, zorder=5)
+        model_h['GISS-E2-1-G'] = ax_a.scatter(cal['GISS-E2-1-G']['w'], cal['GISS-E2-1-G']['s'],
+                                              color=cal['GISS-E2-1-G']['color'], marker='X', s=20.8,
+                                              edgecolors='black', linewidths=0.3, zorder=4)
     for i, m in enumerate(targets):
         mfc = 'none' if partial[m] else grey
         ax_a.errorbar(w_mean[m], s_mean[i], yerr=[[s_mean[i] - s_lo[i]], [s_hi[i] - s_mean[i]]],
-                      ecolor=grey, elinewidth=1.4, capsize=2.5, zorder=2)
-        ax_a.scatter(w_mean[m], s_mean[i], s=34, marker='D', facecolors=mfc,
-                     edgecolors=grey, linewidths=1.0, zorder=3)
-    ax_a.set_xlim(0, x_hi)
+                      ecolor=grey, elinewidth=0.7, capsize=1.3, capthick=0.7, zorder=2)
+        ax_a.scatter(w_mean[m], s_mean[i], s=8.8, marker='D', facecolors=mfc,
+                     edgecolors=grey, linewidths=0.5, zorder=3)
+    ax_a.set_xlim(0, np.ceil(x_hi / 10) * 10)  # axes end on a tick
     # Fixed per-region y-limits so panel a is comparable across state_dep /
     # predictors / cal_set / origin variants of the same region; regions differ
     # by ~4x in |s|, so a single global range would squash MED. Set to cover the
@@ -1572,21 +1578,27 @@ def make_figure(table=None, wt_ds=None, *,
              'NO': (-0.31, 0.13)}.get(region)
     if y_lim:
         ax_a.set_ylim(*y_lim)
-    ax_a.set_xlabel(rf'$\Delta$AMOC$_{{2090{{-}}2100}}$  [%, vs 1850–1899, SSP mean]')
-    ax_a.set_ylabel(r'Cooling sensitivity  $\left[\frac{^\circ\mathrm{C}}{\%}\right]$')
+        _t, _l = ax_a.get_yticks(), ax_a.get_ylim()
+        ax_a.set_ylim(_t[_t <= _l[0] + 1e-12].max(), _t[_t >= _l[1] - 1e-12].min())  # widen to the enclosing ticks: axes end on ticks
+    ax_a.set_xlabel('ΔAMOC$_\\mathrm{2090–2100}$ (%, vs 1850–1899, SSP mean)')
+    ax_a.set_ylabel('Cooling sensitivity (°C/%)')
     ax_a.spines['top'].set_visible(False)
     ax_a.spines['right'].set_visible(False)
     # Proxy handles carrying what the old bottom footnote said: the two
     # error-bar semantics (±1 SE measured vs 95% PI predicted) and the
     # open-marker meaning (SSP-mean over incomplete scenario coverage).
-    ax_a.scatter([], [], s=50, marker='o', facecolors='none',
-                 edgecolors=text_color, linewidths=0.8,
+    ax_a.scatter([], [], s=13, marker='o', facecolors='none',
+                 edgecolors=text_color, linewidths=0.4,
                  label='preindustrial sensitivity')
-    ax_a.scatter([], [], s=34, marker='D', facecolors=grey, edgecolors=grey,
-                 linewidths=1.0, label='synthetic target (95% PI)')
-    ax_a.scatter([], [], s=34, marker='D', facecolors='none', edgecolors=grey,
-                 linewidths=1.0, label='target lacking ≥1 SSP (SSP-mean)')
-    ax_a.legend(fontsize=9, loc='lower left', frameon=False)
+    ax_a.scatter([], [], s=8.8, marker='D', facecolors=grey, edgecolors=grey,
+                 linewidths=0.5, label='synthetic target (95% PI)')
+    ax_a.scatter([], [], s=8.8, marker='D', facecolors='none', edgecolors=grey,
+                 linewidths=0.5, label='target lacking ≥1 SSP (SSP-mean)')
+    # model key below the fit tag (one or two lines), in the empty upper right
+    ax_a.add_artist(ax_a.legend(model_h.values(), model_h.keys(), fontsize=5, ncol=2, frameon=False,
+                                loc='upper right', bbox_to_anchor=(1, 0.86 if state_dep in ('pooled', 'interact', 'dummy', 'loglin') else 0.92),
+                                handletextpad=0.2, columnspacing=0.8, borderaxespad=0))
+    ax_a.legend(fontsize=5, loc='lower left', frameon=False)
     # Single caption identifying this row's calibration set + predictor spec
     # and the ACTUAL regression being fit and drawn (matching make_stacked_
     # figure's former per-row tag, now built here so standalone and stacked
@@ -1594,8 +1606,7 @@ def make_figure(table=None, wt_ds=None, *,
     # different (state_dep-independent) PI-only R² than the one implied by
     # the state-dep-corrected line actually plotted, which read as an error).
     cal_label = _STACK_CAL_TXT.get(cal_set, cal_set)
-    spec = (rf'$\beta\sim(\Delta$AMOC$,\,\Delta T_\mathrm{{{region}}})$'
-            if predictors == 'wt' else r'$\beta\sim\Delta$AMOC')
+    spec = (f'β ~ (ΔAMOC, ΔT$_\\mathrm{{{region}}}$)' if predictors == 'wt' else 'β ~ ΔAMOC')
     prefix = f"{cal_label},  {spec}"
     # state_dep != 'none' needs a second line: the merged prefix + fit clause
     # overflows the panel width on one line at fontsize 9 (runs into the
@@ -1619,12 +1630,16 @@ def make_figure(table=None, wt_ds=None, *,
                   f"loglin γ={sdf['gamma']:.3f}/K")
     else:
         tag_txt = f"{prefix}  (n={len(res['models'])}, R²={fit.rsquared:.2f})"
-    ax_a.text(0.98, 0.97, tag_txt, transform=ax_a.transAxes, fontsize=9,
+    ax_a.text(0.98, 0.97, tag_txt, transform=ax_a.transAxes, fontsize=5,
               color=text_color, ha='right', va='top')
-    ax_a.text(0.0, 1.02, f'{panel_labels[0]} Synthetic cooling sensitivities'
-              if panel_titles else panel_labels[0],
-              transform=ax_a.transAxes, fontsize=14, fontweight='bold',
-              color=text_color, ha='left', va='bottom')
+    # bold 8 pt letter + 7 pt title, offsets in pt above the axes
+    for ax, letter, title in ((ax_a, panel_labels[0], 'Synthetic cooling sensitivities'),
+                              (ax_b, panel_labels[1], 'Net-cooling AMOC weakening')):
+        ax.annotate(letter, (0, 1), xycoords='axes fraction', xytext=(0, 4), textcoords='offset points',
+                    fontsize=8, fontweight='bold', color=text_color, ha='left', va='baseline')
+        if panel_titles:
+            ax.annotate(title, (0, 1), xycoords='axes fraction', xytext=(8, 4), textcoords='offset points',
+                        fontsize=7, color=text_color, ha='left', va='baseline')
 
     # Panel b: forest of w_net, one row per target, 3 offset SSP ranges.
     order = sorted(targets, key=lambda m: w_mean[m])[::-1]
@@ -1641,31 +1656,32 @@ def make_figure(table=None, wt_ds=None, *,
             y = y0 + off[ssp]
             lo, med, hi = d['q2.5'], d['median'], d['q97.5']
             if np.isfinite(lo) and lo <= 100:
-                ax_b.plot([lo, min(hi, 100)], [y, y], color=c, lw=2.2,
+                ax_b.plot([lo, min(hi, 100)], [y, y], color=c, lw=1,
                           solid_capstyle='butt', zorder=3)
                 if med <= 100:
-                    ax_b.plot(med, y, marker='o', ms=4.5, color=c,
-                              mec='black', mew=0.4, zorder=4)
-            ax_b.text(101.5, y, f"{d['frac_no_cooling']:.0%}", fontsize=7.5,
-                      color=c, va='center', ha='left', clip_on=False)
-    ax_b.set_xlim(0, 100)
-    ax_b.set_ylim(-0.6, len(order) - 0.45)
+                    ax_b.plot(med, y, marker='o', ms=2.3, color=c,
+                              mec='black', mew=0.25, zorder=4)
+
+        # P(no net cooling) per SSP on one line per model (three 5 pt lines do not fit the row height at print size)
+        fr = [per_target[m]['ssp'].get(ssp) for ssp in ssps]
+        ax_b.text(101.5, y0, ' / '.join(f"{d['frac_no_cooling']:.0%}" if d else '–' for d in fr), fontsize=5,
+                  color=text_color, va='center', ha='left')
+    # the P(no net cooling) column lies inside the axes (x > 100), so the axes, not the text, set the right crop edge
+    ax_b.set_xlim(0, 131)
+    ax_b.set_xticks(range(0, 101, 20))
+    ax_b.spines['bottom'].set_bounds(0, 100)
+    ax_b.set_ylim(-0.6, len(order) - 0.45 + (1.4 if panel_titles else 0))
     ax_b.set_yticks(range(len(order)))
-    ax_b.set_yticklabels(order[::-1], fontsize=9)
-    ax_b.set_xlabel(rf'{region} net-cooling AMOC weakening '
-                    rf'$\Delta$AMOC$_\mathrm{{net{{-}}cooling}}$  [%, vs 1850–1899]')
+    ax_b.set_yticklabels(order[::-1])
+    ax_b.set_xlabel(f'{region} net-cooling AMOC weakening (%, vs 1850–1899)')
     if panel_titles:
-        ax_b.text(101.5, len(order) - 0.45, 'P(no net\ncooling)', fontsize=7.5,
+        ax_b.text(101.5, len(order) - 0.45, 'P(no net cooling)\n' + ' / '.join(sfc.SSP_TITLE[s].replace('SSP', '') for s in ssps), fontsize=5,
                   color=text_color, va='bottom', ha='left', clip_on=False)
     ax_b.spines['top'].set_visible(False)
     ax_b.spines['right'].set_visible(False)
-    handles = [plt.Line2D([], [], color=functions.hosing_colors[s]['ge'], lw=2.2,
+    handles = [plt.Line2D([], [], color=functions.hosing_colors[s]['ge'], lw=1,
                           label=sfc.SSP_TITLE[s]) for s in ssps]
-    ax_b.legend(handles=handles, fontsize=9, loc='lower left', frameon=False)
-    ax_b.text(0.0, 1.02, f'{panel_labels[1]} Net-cooling AMOC weakening'
-              if panel_titles else panel_labels[1],
-              transform=ax_b.transAxes, fontsize=14, fontweight='bold',
-              color=text_color, ha='left', va='bottom')
+    ax_b.legend(handles=handles, fontsize=5, loc='lower left', frameon=False)
 
     savepath = None
     if axes is None:
@@ -1679,9 +1695,10 @@ def make_figure(table=None, wt_ds=None, *,
                     f'_base-{baseline.replace("hist_", "hist").replace("_", "-")}'
                     f'_plotbg-{plot_bg}')
         functions.check_savepath(savepath, exts=('.png', '.pdf', '_results.json'))
-        fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight',
+        functions.fit_print_width(fig)
+        fig.savefig(savepath + '.png', dpi=300, bbox_inches='tight',
                     transparent=plot_bg == 'black')
-        fig.savefig(savepath + '.pdf', dpi=400, bbox_inches='tight',
+        fig.savefig(savepath + '.pdf', dpi=600, bbox_inches='tight',
                     transparent=plot_bg == 'black')
         with open(savepath + '_results.json', 'w') as f:
             json.dump(json_safe(sidecar), f, indent=1, allow_nan=False)
@@ -1746,7 +1763,7 @@ def make_stacked_figure(wt_ds=None, *, rows=STACK_ROWS_DEFAULT, region='EU',
     as in make_figure itself)."""
     assert state_dep in STATE_DEPS
     plt.style.use('default')
-    plt.rcParams.update({'font.size': 12})
+    plt.rcParams.update({**functions.PRINT_RC, 'font.size': 6})  # 6 pt base (old 12 pt × s = 0.51)
     if plot_bg == 'black':
         plt.style.use('dark_background')
         plt.rcParams['axes.facecolor'] = '#191919'
@@ -1755,9 +1772,12 @@ def make_stacked_figure(wt_ds=None, *, rows=STACK_ROWS_DEFAULT, region='EU',
     if wt_ds is None or wt_ds.attrs.get('region', '').split(' ')[0] != region:
         wt_ds = get_target_wt(recompute=False, region=region)
     n_t = wt_ds.sizes['model']
+    sc = 0.51  # print scale: old crop 359 mm → 183 mm (fit_print_width sets the exact canvas)
+    figsize = (16 * sc, (len(rows) * (0.30 * n_t + 0.9) + 0.6) * sc)
     fig, axes = plt.subplots(
-        len(rows), 2, figsize=(16, len(rows) * (0.30 * n_t + 0.9) + 0.6),
+        len(rows), 2, figsize=figsize,
         gridspec_kw={'width_ratios': [1, 1.35], 'wspace': 0.28, 'hspace': 0.15})
+    fig.set_size_inches(*figsize, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
 
     sidecar = {'region': region, 'rows': []}
     for i, (cs, pred) in enumerate(rows):
@@ -1789,9 +1809,10 @@ def make_stacked_figure(wt_ds=None, *, rows=STACK_ROWS_DEFAULT, region='EU',
                 f'_base-{baseline.replace("hist_", "hist").replace("_", "-")}'
                 f'{sdep_tag}_plotbg-{plot_bg}')
     functions.check_savepath(savepath, exts=('.png', '.pdf', '_results.json'))
-    fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight',
+    functions.fit_print_width(fig)
+    fig.savefig(savepath + '.png', dpi=300, bbox_inches='tight',
                 transparent=plot_bg == 'black')
-    fig.savefig(savepath + '.pdf', dpi=400, bbox_inches='tight',
+    fig.savefig(savepath + '.pdf', dpi=600, bbox_inches='tight',
                 transparent=plot_bg == 'black')
     with open(savepath + '_results.json', 'w') as f:
         json.dump(json_safe(sidecar), f, indent=1, allow_nan=False)

@@ -60,14 +60,15 @@ if __name__ == '__main__':
 
 def make_figure(reg_ds_mpi, season='', plot_bg='white'):
     plt.style.use('default')
-    plt.rcParams.update({'font.size': 12})
+    plt.rcParams.update(functions.PRINT_RC)
     if plot_bg == 'black':
         plt.style.use('dark_background')
         plt.rcParams['axes.facecolor'] = 'none'
         plt.rcParams['figure.facecolor'] = 'none'
-
-    fig, axes = plt.subplots(1, 2, figsize=(16, 5), subplot_kw={'projection': ccrs.Robinson(central_longitude=8)})
-    plt.subplots_adjust(wspace=0.1)
+    canvas_w = 234  # mm; wider than 183 so the tight crop is 183 mm (fit_print_width)
+    fig, axes = plt.subplots(1, 2, figsize=(canvas_w/25.4, canvas_w/25.4 * 5/16), subplot_kw={'projection': ccrs.Robinson(central_longitude=8)})
+    fig.set_size_inches(canvas_w/25.4, canvas_w/25.4 * 5/16, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
+    plt.subplots_adjust(wspace=0.15)
 
     # Absolute standard errors
     contour_abs = functions.plot_regression_coefficients(
@@ -81,7 +82,6 @@ def make_figure(reg_ds_mpi, season='', plot_bg='white'):
         ext_ax=axes[0],
         savefig=False
     )
-    axes[0].set_title('a) Absolute standard error', fontsize=14)
 
     # Relative standard errors
     contour_rel = functions.plot_regression_coefficients(
@@ -95,20 +95,22 @@ def make_figure(reg_ds_mpi, season='', plot_bg='white'):
         ext_ax=axes[1],
         savefig=False
     )
-    axes[1].set_title('b) Relative standard error', fontsize=14)
 
     # Add colorbars
     cbar_abs = fig.colorbar(contour_abs, ax=axes[0], orientation='vertical', pad=0.02, aspect=30, extend='max')
-    cbar_abs.set_label('Standard error per 10% AMOC weakening [°C]', fontsize=12)
-    cbar_abs.ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: f"{np.round(x, 4)}°C"))
+    cbar_abs.set_label('Standard error per 10% AMOC weakening', labelpad=3)
+    cbar_abs.ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: f"{x:.3f} °C"))
 
     cbar_rel = fig.colorbar(contour_rel, ax=axes[1], orientation='vertical', pad=0.02, aspect=30, extend='max')
-    cbar_rel.set_label('Relative standard error [%]', fontsize=12)
-    cbar_rel.ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: f"{np.round(x, 1)}%"))
+    cbar_rel.set_label('Relative standard error', labelpad=3)
+    cbar_rel.ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: f"{x:.0f}%"))
+
+    functions.panel_headers(fig, axes, ['Absolute standard error', 'Relative standard error'])
 
     savepath = f"../plots/FigSupp_mpi_std_errors_plotbg-{plot_bg}_season-{season or 'annual'}"
-    fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight', transparent=True if plot_bg=='black' else False)
-    fig.savefig(savepath + '.pdf', bbox_inches='tight', dpi=400, transparent=True if plot_bg=='black' else False)
+    functions.fit_print_width(fig)
+    fig.savefig(savepath + '.png', dpi=300, bbox_inches='tight', transparent=True if plot_bg=='black' else False)
+    fig.savefig(savepath + '.pdf', bbox_inches='tight', dpi=600, transparent=True if plot_bg=='black' else False)
 
     return fig, savepath
 

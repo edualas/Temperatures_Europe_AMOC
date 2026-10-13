@@ -4,6 +4,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.text
 import matplotlib.cm as cm
 from matplotlib.colors import BoundaryNorm
 from matplotlib.patches import Rectangle
@@ -53,20 +54,19 @@ def binary_net_cooling_map(reg_ds, ssp, threshold, T_ref='pi', season='',
     if fill_color is None:
         fill_color = _binary_fill
 
-    plt.style.use('default')
-    if plot_bg == 'black':
-        plt.style.use('dark_background')
-        plt.rcParams['axes.facecolor'] = '#191919'
-        plt.rcParams['figure.facecolor'] = '#191919'
-
+    # Sizes are print sizes (pt); the caller's style stands when drawing into ext_ax.
     if ext_ax is None:
+        plt.style.use('default')
+        if plot_bg == 'black':
+            plt.style.use('dark_background')
+            plt.rcParams['axes.facecolor'] = '#191919'
+            plt.rcParams['figure.facecolor'] = '#191919'
         fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={'projection': ccrs.Robinson(central_longitude=8)})
     else:
         ax = ext_ax
     ax.spines['geo'].set_visible(False)
-    ax.set_rasterized(True)
-    ax.coastlines(color='black' if not plot_bg == 'black' else 'white', linewidth=0.5, zorder=3)
-    ax.add_feature(cfeature.BORDERS, edgecolor='black' if not plot_bg == 'black' else 'white', linewidth=.5)
+    ax.coastlines(color='black' if not plot_bg == 'black' else 'white', linewidth=0.33, zorder=3)
+    ax.add_feature(cfeature.BORDERS, edgecolor='black' if not plot_bg == 'black' else 'white', linewidth=.33)
     ax.add_feature(cfeature.LAND, facecolor=mid_gray)
     ax.add_feature(cfeature.OCEAN, facecolor='white' if not plot_bg == 'black' else '#191919', zorder=2)
 
@@ -94,6 +94,7 @@ def binary_net_cooling_map(reg_ds, ssp, threshold, T_ref='pi', season='',
             transform=ccrs.PlateCarree(),
             extend='neither',
         )
+        functions.rasterize_map(ax, contour)
 
     ax.set_extent([-18.5, 38.5, 34.8, 72], crs=ccrs.PlateCarree())
     functions.add_square(ax, -13.5, 0, 60, 75.5, colour='#191919' if plot_bg == 'black' else 'white')
@@ -120,11 +121,12 @@ def make_figure(reg_ds_mpi, plot_season='', plot_bg='white', T_ref='pi',
     assert len(thresholds) == 3, 'thresholds must have length 3 (gridspec is fixed)'
 
     plt.style.use('default')
-    plt.rcParams.update({'font.size': 12})
+    plt.rcParams.update(functions.PRINT_RC)
     if plot_bg == 'black':
         plt.style.use('dark_background')
         plt.rcParams['axes.facecolor'] = '#191919'
         plt.rcParams['figure.facecolor'] = '#191919'
+    fg = 'black' if plot_bg != 'black' else 'white'
 
     ncols = 3
     panel_labels = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l']
@@ -137,11 +139,13 @@ def make_figure(reg_ds_mpi, plot_season='', plot_bg='white', T_ref='pi',
     else:
         nrows, gridspec_kw, row_offset, fig_h = 5, {'height_ratios': [1, 0.1, 1, 1, 1]}, 2, 12
 
+    sc = 0.635  # print scale: old crop 288 mm → 183 mm (fit_print_width sets the exact canvas)
     fig, axes = plt.subplots(
-        nrows, ncols, figsize=(12, fig_h),
+        nrows, ncols, figsize=(12 * sc, fig_h * sc),
         subplot_kw={'projection': ccrs.Robinson(central_longitude=8)},
         constrained_layout=False, gridspec_kw=gridspec_kw,
     )
+    fig.set_size_inches(12 * sc, fig_h * sc, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
     axes = axes.flatten()
 
     # Hide spacer row (grid indices 3, 4, 5) when the scaling row is present.
@@ -166,9 +170,8 @@ def make_figure(reg_ds_mpi, plot_season='', plot_bg='white', T_ref='pi',
             )
             reg_mappables.append(mappable)
             panel_axes.append(axes[i])
-            axes[i].text(0.5, -0.03, reg_plot_labels[i], transform=axes[i].transAxes,
-                         fontsize=12, ha='center', va='top', fontweight='bold',
-                         color='black' if not plot_bg == 'black' else 'white')
+            fig.add_artist(matplotlib.text.Annotation(reg_plot_labels[i], (0.5, 0), xycoords=axes[i].transAxes, xytext=(0, -2),
+                                                      textcoords='offset points', fontsize=7, ha='center', va='top', fontweight='bold', color=fg))
 
     # -------- Binary threshold rows --------
     # Row r (0..2) → axes indices 3*(r+2) .. 3*(r+2)+2 (skipping spacer row 1).
@@ -180,45 +183,47 @@ def make_figure(reg_ds_mpi, plot_season='', plot_bg='white', T_ref='pi',
                 ext_ax=axes[ax_idx], plot_bg=plot_bg,
             )
             panel_axes.append(axes[ax_idx])
-            axes[ax_idx].text(
-                0.5, -0.03, functions.ssp_labels[ssp],
-                transform=axes[ax_idx].transAxes,
-                fontsize=12, ha='center', va='top',
-                color=functions.hosing_colors[ssp]['ge'], fontweight='bold',
-            )
+            # figure-level, black (the map axes are rasterised; no coloured text)
+            fig.add_artist(matplotlib.text.Annotation(functions.ssp_labels[ssp], (0.5, 0), xycoords=axes[ax_idx].transAxes, xytext=(0, -2),
+                                                      textcoords='offset points', fontsize=7, ha='center', va='top', fontweight='bold', color=fg))
 
     # -------- Row labels --------
     season_str = 'annual' if plot_season == '' else plot_season.upper()
     if T_ref == 'combined':
-        baseline_suffix = (f'w.r.t. {season_str} mean preindustrial (1850-1899, dark blue) \n'
-                           f'and present-day ({functions.PD_LABEL}, light blue) temperatures')
+        baseline_suffix = f'w.r.t. {season_str} mean temperatures in'  # the two baselines are keyed in a legend that continues the line
     else:
         T_ref_str = 'preindustrial' if T_ref == 'pi' else 'present-day'
-        baseline_years = '1850-1899' if T_ref == 'pi' else functions.PD_LABEL
+        baseline_years = '1850–1899' if T_ref == 'pi' else functions.PD_LABEL
         baseline_suffix = f'w.r.t. {season_str} mean {T_ref_str} temperatures ({baseline_years})'
 
     binary_labels = [
-        f'Net cooling region for {thresholds[0]}% AMOC weakening, {baseline_suffix}',
+        f'Net cooling region for {thresholds[0]}% AMOC weakening {baseline_suffix}',
         f'Net cooling region for {thresholds[1]}% AMOC weakening',
         f'Net cooling region for {thresholds[2]}% AMOC weakening',
     ]
     left = axes[0].get_position().x0
-    label_kw = dict(va='center', ha='left', fontsize=12, fontweight='bold',
+    label_kw = dict(va='center', ha='left', fontsize=7, fontweight='bold',
                     color='black' if not plot_bg == 'black' else 'white')
     if not omit_scaling_row:
         fig.text(left, axes[0].get_position().y1 + 0.02,
                  'Cooling sensitivities: local cooling as a function of additional AMOC weakening',
                  **label_kw)
-    for r, lbl in enumerate(binary_labels):
-        row_top = axes[ncols * (row_offset + r)].get_position().y1
-        fig.text(left, row_top + 0.02, lbl, **label_kw)
+    row_texts = [fig.text(left, axes[ncols * (row_offset + r)].get_position().y1 + 0.02, lbl, **label_kw)
+                 for r, lbl in enumerate(binary_labels)]
+    if T_ref == 'combined':  # key for the two fills, continuing the first binary row's header line
+        fig.draw_without_rendering()
+        x1 = row_texts[0].get_window_extent().x1 + 4 * fig.dpi / 72
+        fig.legend([Rectangle((0, 0), 1, 1, color=_binary_fill), Rectangle((0, 0), 1, 1, color=_binary_fill_pd)],
+                   ['1850–1899', functions.PD_LABEL], ncol=2, frameon=False, loc='center left',
+                   bbox_to_anchor=(x1 / fig.bbox.width, row_texts[0].get_position()[1]), borderpad=0, borderaxespad=0,
+                   handlelength=1.2, handleheight=0.9, handletextpad=0.4, columnspacing=1.0, labelcolor=fg)
 
     # -------- Panel labels --------
     for ax, label in zip(panel_axes, panel_labels):
         ax_left = ax.get_position().x0
         ax_top = ax.get_position().y1
         fig.text(ax_left + 0.015, ax_top - 0.01, label, transform=fig.transFigure,
-                 fontsize=14, ha='right', va='center', fontweight='bold',
+                 fontsize=8, ha='right', va='center', fontweight='bold',
                  color='black' if not plot_bg == 'black' else 'white')
 
     # -------- Right-hand sidebar --------
@@ -241,9 +246,9 @@ def make_figure(reg_ds_mpi, plot_season='', plot_bg='white', T_ref='pi',
         cbar1_height = axes[1].get_position().y1 - cbar1_y
         cax1 = fig.add_axes([cbar_x, cbar1_y, cbar_width, cbar1_height])
         cbar1 = fig.colorbar(reg_mappables[2], cax=cax1, orientation='vertical')
-        cbar1.ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x:.1f}°C"))
-        cbar1.set_label('Cooling per 10% additional\nAMOC weakening', fontsize=12,
-                        labelpad=5, loc='center',
+        cbar1.ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x:.1f} °C"))
+        cbar1.set_label('Cooling per 10% additional\nAMOC weakening', fontsize=7,
+                        labelpad=3, loc='center',
                         color='black' if not plot_bg == 'black' else 'white')
 
     # Sidebar: plain Axes, AMOC weakening 0-100% inverted. Ticks on the left only.
@@ -256,7 +261,7 @@ def make_figure(reg_ds_mpi, plot_season='', plot_bg='white', T_ref='pi',
     sidebar.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x:.0f}%"))
     sidebar.yaxis.set_ticks_position('left')
     sidebar.yaxis.set_label_position('left')
-    sidebar.set_ylabel('AMOC weakening', fontsize=12, labelpad=0.5, color=text_color)
+    sidebar.set_ylabel('AMOC weakening', fontsize=7, labelpad=0.5, color=text_color)
     for s in ['top', 'bottom', 'right']:
         sidebar.spines[s].set_visible(False)
     sidebar.spines['left'].set_color(text_color)
@@ -282,7 +287,7 @@ def make_figure(reg_ds_mpi, plot_season='', plot_bg='white', T_ref='pi',
         line_color = colorsys.hls_to_rgb(h, max(0, l * 0.7), min(1, s * 1.3))
         sidebar.plot(
             [range_positions[i] - 0.08, range_positions[i] + 1.08], [mpi_y, mpi_y],
-            color=line_color, linewidth=2,
+            color=line_color, linewidth=1,
             transform=sidebar.transAxes, clip_on=False, zorder=11,
         )
 
@@ -290,7 +295,7 @@ def make_figure(reg_ds_mpi, plot_season='', plot_bg='white', T_ref='pi',
         sidebar.text(
             range_positions[i] + 0.6, text_y,
             f"{functions.ssp_labels[ssp]} 2100 CMIP6 range",
-            color='white', fontsize=9, rotation=90, va='center', ha='center',
+            color='white', fontsize=6, rotation=90, va='center', ha='center',
             transform=sidebar.transAxes, zorder=12,
         )
 
@@ -315,9 +320,10 @@ def make_figure(reg_ds_mpi, plot_season='', plot_bg='white', T_ref='pi',
         f'_thresh-{"-".join(str(t) for t in thresholds)}'
         f'_omitscale-{omit_scaling_row}'
     )
+    functions.fit_print_width(fig)
     fig.savefig(savepath + '.png', bbox_inches='tight',
-                transparent=True if plot_bg == 'black' else False, dpi=200)
-    fig.savefig(savepath + '.pdf', bbox_inches='tight', dpi=400,
+                transparent=True if plot_bg == 'black' else False, dpi=300)
+    fig.savefig(savepath + '.pdf', bbox_inches='tight', dpi=600,
                 transparent=True if plot_bg == 'black' else False)
     print(f'wrote {savepath}.png/.pdf')
 

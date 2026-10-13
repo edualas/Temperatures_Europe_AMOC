@@ -4,6 +4,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.text
 from matplotlib.patches import Rectangle
 from matplotlib import ticker
 from matplotlib.gridspec import GridSpec
@@ -37,7 +38,7 @@ def make_figure(multi_model_dict, masks, boot_data, reg_ds_cesm, plot_bg='white'
     # cbar_x positioning mirror Fig2's weakening_only handling — when Fig2's
     # colorbar / weakening_only logic changes, mirror it here.
     plt.style.use('default')
-    plt.rcParams.update({'font.size': 12})
+    plt.rcParams.update(functions.PRINT_RC)
     # CMIP6 weakening envelope for the chosen future window (canonical global
     # when future_window is None); shared by the maps and the colorbar bars.
     _ext = functions.get_amoc_extent(future_window)
@@ -47,11 +48,15 @@ def make_figure(multi_model_dict, masks, boot_data, reg_ds_cesm, plot_bg='white'
         plt.rcParams['figure.facecolor'] = '#191919'
 
     # Create figure with gridspec: top row for regression, bottom two for maps
-    fig = plt.figure(figsize=(12, 10))
+    canvas_w = 204.5  # mm (old 12 in × s = 0.671); the tight crop is 183 mm (fit_print_width)
+    fig = plt.figure(figsize=(canvas_w / 25.4, canvas_w / 25.4 * 10 / 12))
+    fig.set_size_inches(canvas_w / 25.4, canvas_w / 25.4 * 10 / 12, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
+    fg = 'black' if not plot_bg == 'black' else 'white'
     gs = GridSpec(3, 3, figure=fig, height_ratios=[1.2, 1, 1], hspace=0.35, wspace=-0.3)
 
     # Top row: CESM regressions plot (spans all 3 columns)
     ax_reg = fig.add_subplot(gs[0, :])
+    row = 10 / (ax_reg.get_position().height * fig.get_figheight() * 72)  # equation rows 10 pt apart (stacked °C/10%)
 
     # Call cesm_regressions with ext_ax (settings from multi_model_analysis.py lines 37-50)
     functions.cesm_regressions(
@@ -68,14 +73,14 @@ def make_figure(multi_model_dict, masks, boot_data, reg_ds_cesm, plot_bg='white'
         hosmip_cesm=False,
         plot_bg=plot_bg,
         ext_ax=ax_reg,
-        equation_y_pos=0.34,
-        equation_y_spacing=0.12  # wider: simple_eqs render °C/10% as a stacked fraction
+        equation_y_pos=0.06 + 2 * row,
+        equation_y_spacing=row
     )
 
-    ax_reg.text(0.02, 0.94, 'a)', transform=ax_reg.transAxes, fontsize=12, fontweight='bold', va='top', ha='left')
+    ax_reg.annotate('a', (0, 1), xycoords='axes fraction', xytext=(0, 4), textcoords='offset points', fontsize=8, fontweight='bold', va='bottom', ha='left', color=fg)  # above the axes: inside, it sat on the regression band
 
     # Bottom two rows: Net cooling point maps
-    panel_labels = ['b)', 'c)', 'd)', 'e)', 'f)', 'g)']
+    panel_labels = ['b', 'c', 'd', 'e', 'f', 'g']
     ncols = 3
 
     map_axes = []
@@ -91,12 +96,11 @@ def make_figure(multi_model_dict, masks, boot_data, reg_ds_cesm, plot_bg='white'
             ax = map_axes[3*j + i]
             mappable = functions.net_cooling_point_map(reg_ds_cesm, ssp_scenario, season='', T_ref=T_ref, ext_ax=ax, plot_bg=plot_bg, title=False, custom_cmap=None, weakening_primary=True, show_cmip_range_contours=show_cmip_range_contours, amoc_extent=_ext)
             mappables.append(mappable)
-            ax.text(0.38, -0.03, panel_labels[3*j+i],
-                    transform=ax.transAxes, fontsize=12, ha='right', va='top',
-                    color='black' if not plot_bg=='black' else 'white', fontweight='bold')
-            ax.text(0.4, -0.03, functions.ssp_labels[ssp_scenario],
-                    transform=ax.transAxes, fontsize=12, ha='left', va='top',
-                    color=functions.hosing_colors[ssp_scenario]['ge'], fontweight='bold')
+            # figure-level texts (the map axes are rasterised): letter top-left, scenario below, as in Fig. 2
+            fig.add_artist(matplotlib.text.Annotation(panel_labels[3*j+i], (0, 1), xycoords=ax.transAxes, xytext=(0, -1),
+                                                      textcoords='offset points', fontsize=8, fontweight='bold', color=fg, ha='left', va='top'))
+            fig.add_artist(matplotlib.text.Annotation(functions.ssp_labels[ssp_scenario], (0.5, 0), xycoords=ax.transAxes, xytext=(0, -2),
+                                                      textcoords='offset points', fontsize=7, fontweight='bold', color=fg, ha='center', va='top'))
         j += 1
 
     # Adjust top axes to align with maps below
@@ -108,13 +112,13 @@ def make_figure(multi_model_dict, masks, boot_data, reg_ds_cesm, plot_bg='white'
     # Row labels for maps
     row_labels = [
         f"Net-cooling AMOC weakening w.r.t. annual mean present-day temperatures ({functions.PD_LABEL})",
-        "Net-cooling AMOC weakening w.r.t. annual mean preindustrial temperatures (1850-1899)",
+        "Net-cooling AMOC weakening w.r.t. annual mean preindustrial temperatures (1850–1899)",
     ]
 
     left = map_axes[0].get_position().x0
     for i in range(2):
         row_top = map_axes[i*ncols].get_position().y1
-        fig.text(left, row_top+0.01, row_labels[i], va='center', ha='left', fontsize=12, fontweight='bold',
+        fig.text(left, row_top+0.01, row_labels[i], va='center', ha='left', fontsize=7, fontweight='bold',
                  color='black' if not plot_bg=='black' else 'white')
 
     # Colorbar
@@ -146,10 +150,10 @@ def make_figure(multi_model_dict, masks, boot_data, reg_ds_cesm, plot_bg='white'
     cbar.ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x:.0f}%"))
     cbar.ax.yaxis.set_ticks_position('right')
     cbar.ax.yaxis.set_label_position('right')
-    cbar.set_label('AMOC weakening', fontsize=12, labelpad=5, loc='bottom', color=text_color)
+    cbar.set_label('AMOC weakening', fontsize=7, labelpad=3, loc='bottom', color=text_color)
     if not weakening_only:
         secax = cbar.ax.secondary_yaxis('left', functions=(cesm_weakening_to_strength, cesm_strength_to_weakening))
-        secax.set_ylabel('AMOC strength', fontsize=12, labelpad=0, loc='bottom', color=text_color)
+        secax.set_ylabel('AMOC strength', fontsize=7, labelpad=0, loc='bottom', color=text_color)
         secax.set_yticks(list(range(0, 17, 2)))  # cap at 16 Sv; CESM PI (~17.96 Sv) defines the 0% end
         secax.set_yticklabels([f'{s} Sv' for s in range(0, 17, 2)])
 
@@ -183,7 +187,7 @@ def make_figure(multi_model_dict, masks, boot_data, reg_ds_cesm, plot_bg='white'
         cbar.ax.plot(
             [range_positions[i] - 0.08, range_positions[i] + 1.08], [cesm_y, cesm_y],
             color=line_color,
-            linewidth=2, transform=cbar.ax.transAxes, clip_on=False, zorder=10
+            linewidth=1, transform=cbar.ax.transAxes, clip_on=False, zorder=10
         )
 
         bar_text = f"{functions.ssp_labels[ssp_scenario]} 2100 CMIP6 range"
@@ -192,7 +196,7 @@ def make_figure(multi_model_dict, masks, boot_data, reg_ds_cesm, plot_bg='white'
             text_y,
             bar_text,
             color='white',
-            fontsize=9,
+            fontsize=5,  # 6 pt overruns the SSP3-7.0 bar at print size
             rotation=90,
             va='center',
             ha='center',
@@ -220,8 +224,9 @@ def make_figure(multi_model_dict, masks, boot_data, reg_ds_cesm, plot_bg='white'
                                              transform=fig.transFigure, color=border_color, zorder=1000, clip_on=False))
 
     savepath = f'../plots/FigSupp_cesm_net_cooling_maps_plotbg-{plot_bg}_cmiprange-{show_cmip_range_contours}_weakonly-{weakening_only}{functions.fw_suffix(future_window)}'
-    fig.savefig(savepath + '.png', bbox_inches='tight', transparent=True if plot_bg=='black' else False, dpi=200)
-    fig.savefig(savepath + '.pdf', bbox_inches='tight', dpi=400, transparent=True if plot_bg=='black' else False)
+    functions.fit_print_width(fig)
+    fig.savefig(savepath + '.png', bbox_inches='tight', transparent=True if plot_bg=='black' else False, dpi=300)
+    fig.savefig(savepath + '.pdf', bbox_inches='tight', dpi=600, transparent=True if plot_bg=='black' else False)
 
     return fig, savepath
 

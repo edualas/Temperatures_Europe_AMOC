@@ -185,7 +185,7 @@ _WORST_LINEARITY_BY_QUADRATIC_P = {
 
 def make_figure(data_dict, lin_ds, var='tas', region='EU', season='', plot_bg='white'):
     plt.style.use('default')
-    plt.rcParams.update({'font.size': 12})
+    plt.rcParams.update({**functions.PRINT_RC, 'font.size': 6})  # 6 pt base: six panels in 183 mm (s = 0.435)
     if plot_bg == 'black':
         plt.style.use('dark_background')
         plt.rcParams['axes.facecolor'] = '#191919'
@@ -194,11 +194,13 @@ def make_figure(data_dict, lin_ds, var='tas', region='EU', season='', plot_bg='w
     fg = 'black' if plot_bg != 'black' else 'white'
     bg = 'white' if plot_bg != 'black' else '#191919'
 
-    fig = plt.figure(figsize=(20, 11))
+    sc = 0.435  # print scale: old crop 421 mm → 183 mm (fit_print_width sets the exact canvas)
+    fig = plt.figure(figsize=(20 * sc, 11 * sc))
+    fig.set_size_inches(20 * sc, 11 * sc, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
     gs = fig.add_gridspec(
         2, 3,
         height_ratios=[1.05, 1.0], width_ratios=[1.0, 1.0, 1.0],
-        wspace=0.22, hspace=0.15,
+        wspace=0.22, hspace=0.32,  # 0.15 → 0.32: colourbar labels, stippling key and the d–f headers need the band at print size
     )
     ax_a = fig.add_subplot(gs[0, 0], projection=ccrs.Robinson(central_longitude=8))
     ax_b = fig.add_subplot(gs[0, 1], projection=ccrs.Robinson(central_longitude=8))
@@ -239,17 +241,17 @@ def make_figure(data_dict, lin_ds, var='tas', region='EU', season='', plot_bg='w
         norm = mcolors.BoundaryNorm(bounds, cmap.N, clip=False)
 
         ax.spines['geo'].set_visible(False)
-        ax.set_rasterized(True)
-        ax.coastlines(color=fg, linewidth=0.5, zorder=3)
-        ax.add_feature(cfeature.BORDERS, edgecolor=fg, linewidth=0.5)
+        ax.coastlines(color=fg, linewidth=0.25, zorder=3)
+        ax.add_feature(cfeature.BORDERS, edgecolor=fg, linewidth=0.25)
         ax.add_feature(cfeature.OCEAN, facecolor=bg, zorder=2)
         pcm = ax.pcolormesh(
             lons, lats, field,
             cmap=cmap, norm=norm, transform=ccrs.PlateCarree(), shading='auto',
         )
+        functions.rasterize_map(ax, pcm)
         ax.scatter(
             stipple_lon, stipple_lat,
-            s=4.5, c=fg, marker='.', linewidths=0, alpha=0.85,
+            s=1.6, c=fg, marker='.', linewidths=0, alpha=0.85,
             transform=ccrs.PlateCarree(), zorder=4,
         )
         ax.set_extent([-18.5, 38.5, 34.8, 72], crs=ccrs.PlateCarree())
@@ -257,26 +259,17 @@ def make_figure(data_dict, lin_ds, var='tas', region='EU', season='', plot_bg='w
         functions.add_square(ax, -30, -18,  68, 75, colour=bg)
         cbar = fig.colorbar(pcm, ax=ax, orientation='horizontal',
                             pad=0.05, aspect=30, extend='max', ticks=bounds)
-        cbar.set_label(label, fontsize=10)
+        cbar.set_label(label)
         return cbar
 
-    _draw_map(ax_a, baseline_r2, vmin=0.0, vmax=1.0,   n_bins=10,
+    cbar_a = _draw_map(ax_a, baseline_r2, vmin=0.0, vmax=1.0,   n_bins=10,
               label='baseline R² (linear share of total variance)')
     _draw_map(ax_b, partial_r2,  vmin=0.0, vmax=0.25,  n_bins=5,
               label='partial R² (curvature share of residuals)')
     _draw_map(ax_c, delta_r2,    vmin=0.0, vmax=0.025, n_bins=5,
-              label='ΔR²_total (curvature share of total variance)')
+              label=r'$\Delta\mathrm{R}^2_\mathrm{total}$ (curvature share of total variance)')
 
     season_suffix = f' ({season.upper()})' if season else ''
-    ax_a.set_title(f'a) baseline R²{season_suffix}', fontsize=12, loc='left')
-    ax_b.set_title(f'b) partial R²{season_suffix}', fontsize=12, loc='left')
-    ax_c.set_title(f'c) ΔR²_total{season_suffix}',  fontsize=12, loc='left')
-
-    fig.text(
-        0.5, 0.92,
-        'Stippling: RESET F-test rejects linearity at 5%.',
-        fontsize=10, ha='center', style='italic', color=fg,
-    )
 
     # ------------------------------------------------------------------
     # BOTTOM ROW d): canonical regression scatter + M₀ line (regression_plot)
@@ -287,12 +280,16 @@ def make_figure(data_dict, lin_ds, var='tas', region='EU', season='', plot_bg='w
         data_dict, region=region, var=var, season=season,
         no_plots=False, compute_linearity=True,
         ext_ax=ax_d, plot_bg=plot_bg, ylim=(-2.5, 1.5),
-        equation_y_pos=0.25,  # equations in the empty bottom-left, clear of the data
+        equation_y_pos=0.04 + 3 * 10 / (ax_d.get_position().height * fig.get_figheight() * 72),  # equations in the empty bottom-left, clear of the data
+        equation_y_spacing=10 / (ax_d.get_position().height * fig.get_figheight() * 72),  # rows 10 pt apart (stacked °C/10%)
     )
     lc = functions.regression_plot.last_call
-    functions.add_weakening_pct_overlay(fig, ax_d, plot_bg=plot_bg, drop_parent_xaxis=True)
-    ax_d.set_title(f'd) {region}-mean linear regression{season_suffix}',
-                   fontsize=12, loc='left')
+    wlabel = 'AMOC weakening additional to MPI-GE\n(w.r.t. 1850–1899)'  # one line is wider than a panel at print size
+    functions.add_weakening_pct_overlay(fig, ax_d, plot_bg=plot_bg, drop_parent_xaxis=True, label=wlabel)
+    for t in ax_d.texts:  # equation rows over the dashed 0 line: knock the line out behind the text
+        if t.get_text():
+            t.set_bbox(dict(facecolor=bg, edgecolor='none', pad=0.3))
+
 
     # ------------------------------------------------------------------
     # Common per-point arrays for panels e and f
@@ -320,25 +317,25 @@ def make_figure(data_dict, lin_ds, var='tas', region='EU', season='', plot_bg='w
             cl = functions.hosing_colors[ssp_names[k]][hos_names[k]]
         except KeyError:
             mk, cl = 'o', '#888888'
-        ax_e.scatter(x_amoc[k], resid[k], marker=mk, color=cl, s=25,
+        ax_e.scatter(x_amoc[k], resid[k], marker=mk, color=cl, s=4.7,
                      alpha=0.75, linewidths=0, clip_on=False)
-    ax_e.axhline(0, color=fg, lw=1.0, ls='--')
+    ax_e.axhline(0, color=fg, lw=0.5, ls='--')
 
     if np.isfinite(g2) and np.isfinite(g3) and len(x_amoc) > 4:
         x_curve = np.linspace(np.nanmin(x_amoc), np.nanmax(x_amoc), 200)
         yhat_curve = beta0 + beta1 * x_curve
         y_curve = g2 * yhat_curve**2 + g3 * yhat_curve**3
-        ax_e.plot(x_curve, y_curve, color='#3d8fd4', lw=2.0,
-                  label='γ₂·ŷ(x)² + γ₃·ŷ(x)³  (augmented OLS)')
-        ax_e.legend(loc='lower left', frameon=False, fontsize=9)
+        ax_e.plot(x_curve, y_curve, color='#3d8fd4', lw=0.87,
+                  label='$\\gamma_2$·ŷ(x)² + $\\gamma_3$·ŷ(x)³\n(augmented OLS)')
+        ax_e.legend(loc='upper left', frameon=False, fontsize=5, borderaxespad=0.2)
+        ax_e.set_ylim(-0.3, 0.5)  # room for the legend above the residuals (lower left, it covered them)
 
-    ax_e.set_ylabel('Residual e₀ = y − ŷ [°C]')
+    ax_e.set_ylabel('Residual e$_0$ = y − ŷ (°C)')
     ax_e.set_xlim(ax_d.get_xlim())  # Sv, inverted to match d; %-ruler added below
     ax_e.spines['top'].set_visible(False)
     ax_e.spines['right'].set_visible(False)
-    functions.add_weakening_pct_overlay(fig, ax_e, plot_bg=plot_bg, drop_parent_xaxis=True)
-    ax_e.set_title(f'e) {region}-mean residuals (RESET diagnostic){season_suffix}',
-                   fontsize=12, loc='left')
+    functions.add_weakening_pct_overlay(fig, ax_e, plot_bg=plot_bg, drop_parent_xaxis=True, label=wlabel)
+
 
     # ------------------------------------------------------------------
     # BOTTOM ROW f): M₀ line + augmented curve, with extrapolation tail shaded
@@ -349,7 +346,7 @@ def make_figure(data_dict, lin_ds, var='tas', region='EU', season='', plot_bg='w
             cl = functions.hosing_colors[ssp_names[k]][hos_names[k]]
         except KeyError:
             mk, cl = 'o', '#888888'
-        ax_f.scatter(x_amoc[k], y_dat[k], marker=mk, color=cl, s=25,
+        ax_f.scatter(x_amoc[k], y_dat[k], marker=mk, color=cl, s=4.7,
                      alpha=0.75, linewidths=0, clip_on=False)
 
     x_min_data = float(np.nanmin(x_amoc))
@@ -363,11 +360,11 @@ def make_figure(data_dict, lin_ds, var='tas', region='EU', season='', plot_bg='w
                      + g3 * yhat_M0_for_curve**3)
 
     # M₀ across the full extrapolated range
-    ax_f.plot(x_full, yhat_M0_full, color=fg, lw=1.2, ls='-',
-              label='linear: ŷ(x) = β̂₀ + β̂₁·x', zorder=4)
+    ax_f.plot(x_full, yhat_M0_full, color=fg, lw=0.6, ls='-',
+              label=r'linear: ŷ(x) = $\beta_0$ + $\beta_1$·x', zorder=4)
     # Augmented across the full extrapolated range
-    ax_f.plot(x_full, yhat_aug_full, color='#3d8fd4', lw=2.4, ls='-',
-              label='augmented: + γ̂₂·ŷ(x)² + γ̂₃·ŷ(x)³', zorder=5)
+    ax_f.plot(x_full, yhat_aug_full, color='#3d8fd4', lw=1, ls='-',
+              label=r'augmented: + $\gamma_2$·ŷ(x)² + $\gamma_3$·ŷ(x)³', zorder=5)
 
     # Shade the extrapolation tail (x outside the data x-range)
     # ax_f.axvspan(x_extrap_left, x_min_data, color=fg, alpha=0.08, zorder=1)
@@ -377,8 +374,8 @@ def make_figure(data_dict, lin_ds, var='tas', region='EU', season='', plot_bg='w
     #     fontsize=8, color=fg, ha='left', va='top', alpha=0.7, style='italic',
     # )
 
-    ax_f.axhline(0, color=fg, lw=1.0, ls='--', zorder=2)
-    ax_f.axvline(0, color=fg, lw=1.0, ls='--', zorder=2)
+    ax_f.axhline(0, color=fg, lw=0.5, ls='--', zorder=2)
+    ax_f.axvline(0, color=fg, lw=0.5, ls='--', zorder=2)
     ax_f.set_ylabel(ax_d.get_ylabel())
     # Match d's inverted Sv orientation: least-weakening (+6 Sv) left, extrapolation
     # tail (x_extrap_left) right. %-ruler (extended to +60 for the tail) added below.
@@ -386,36 +383,47 @@ def make_figure(data_dict, lin_ds, var='tas', region='EU', season='', plot_bg='w
     ax_f.set_ylim(ax_d.get_ylim())
     ax_f.spines['top'].set_visible(False)
     ax_f.spines['right'].set_visible(False)
-    functions.add_weakening_pct_overlay(fig, ax_f, plot_bg=plot_bg, drop_parent_xaxis=True, weak_max_pct=60)
-    ax_f.set_title(f'f) {region}-mean linear vs augmented prediction{season_suffix}',
-                   fontsize=12, loc='left')
-    ax_f.legend(loc='lower right', frameon=False, fontsize=9)
+    wax_f = functions.add_weakening_pct_overlay(fig, ax_f, plot_bg=plot_bg, drop_parent_xaxis=True, weak_max_pct=60, label=wlabel)
+    wax_f.set_xticks([-30, 0, 30, 60], [f'{t}%'.replace('-', '−') for t in (-30, 0, 30, 60)])  # every 10% crowds at print size
+    ax_f.legend(loc='lower right', frameon=False, fontsize=5)
 
     # Annotation block in panel f — baseline R² first as the headline.
     sign_str = lambda s: '+' if s > 0 else ('−' if s < 0 else '0')
     annot = (
         f'baseline R² = {lc["baseline_r2"]:.3f}\n'
-        f'partial R²  = {lc["partial_r2"]:.3f}\n'
-        f'ΔR²_total   = {lc["delta_r2_total"]:.4f}\n'
-        f'RESET p     = {lc["reset_pvalue"]:.3f}\n'
-        f'(γ̂₂, γ̂₃)   = ({sign_str(lc["beta2_sign"])},{sign_str(lc["beta3_sign"])})'
+        f'partial R² = {lc["partial_r2"]:.3f}\n'
+        rf'$\Delta\mathrm{{R}}^2_\mathrm{{total}}$ = {lc["delta_r2_total"]:.4f}' '\n'
+        f'RESET p = {lc["reset_pvalue"]:.3f}\n'
+        r'($\gamma_2$, $\gamma_3$) = ' + f'({sign_str(lc["beta2_sign"])},{sign_str(lc["beta3_sign"])})'
     )
     ax_f.text(
         0.97, 0.930, annot,
-        transform=ax_f.transAxes, fontsize=9,
-        va='top', ha='right', family='monospace',
-        bbox=dict(facecolor=bg, edgecolor=fg, alpha=0.85,
+        transform=ax_f.transAxes, fontsize=5,
+        va='top', ha='right',
+        bbox=dict(facecolor=bg, edgecolor=fg, alpha=0.85, linewidth=0.4,
                   boxstyle='round,pad=0.4'),
     )
+
+    functions.panel_headers(fig, [ax_a, ax_b, ax_c], [f'baseline R²{season_suffix}', f'partial R²{season_suffix}', rf'$\Delta\mathrm{{R}}^2_\mathrm{{total}}${season_suffix}'])
+    dy_d = functions.panel_headers(fig, [ax_d, ax_e, ax_f], [f'{region}-mean linear regression{season_suffix}',
+                                                            f'{region}-mean residuals (RESET diagnostic){season_suffix}',
+                                                            f'{region}-mean linear vs augmented prediction{season_suffix}'], letters='def')
+    # stippling key centred in the band between the colourbar labels and the panel d–f headers
+    fig.draw_without_rendering()
+    y_key = (cbar_a.ax.get_tightbbox().y0 + ax_d.bbox.y1 + (dy_d + 6) * fig.dpi / 72) / 2 / fig.bbox.height  # header cap height ~6 pt
+    fig.legend([plt.Line2D([], [], marker='.', color=fg, linestyle='None', markersize=2.5)],
+               ['Stippling: RESET F-test rejects linearity at 5%'], loc='center', bbox_to_anchor=(0.5, y_key),
+               frameon=False, fontsize=6, handletextpad=0.2, borderpad=0, borderaxespad=0)
 
     # ------------------------------------------------------------------
     # SAVE
     # ------------------------------------------------------------------
     savepath = (f"../plots/FigSupp_mpi_linearity_var-{var}_region-{region}"
                 f"_season-{season or 'annual'}_plotbg-{plot_bg}")
-    fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight',
+    functions.fit_print_width(fig)
+    fig.savefig(savepath + '.png', dpi=300, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
-    fig.savefig(savepath + '.pdf', dpi=400, bbox_inches='tight',
+    fig.savefig(savepath + '.pdf', dpi=600, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
     return fig, savepath
 

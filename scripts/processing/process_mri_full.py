@@ -27,6 +27,7 @@ warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 import numpy as np
 import xarray as xr
+CFTIME = xr.coders.CFDatetimeCoder(use_cftime=True)  # xarray >= 2025.1: the use_cftime kwarg is deprecated
 
 
 POOL_BASE = '/pool/data/CMIP6/data'
@@ -132,7 +133,7 @@ def weighted_mon_to_year_mean(ds, var):
 
 def derive_tas_yr(chunk_paths):
     """tas Amon → days-in-month-weighted annual mean. Preserves (lat, lon)."""
-    ds = xr.open_mfdataset(chunk_paths, parallel=False, use_cftime=True,
+    ds = xr.open_mfdataset(chunk_paths, parallel=False, decode_times=CFTIME,
                            combine='by_coords')
     out = weighted_mon_to_year_mean(ds, 'tas').load()
     return out
@@ -141,7 +142,7 @@ def derive_tas_yr(chunk_paths):
 def derive_amoc26_yr(chunk_paths):
     """msftmz gr2z → basin=0 (Atlantic+Arctic) → lat=26.5 nearest →
     weighted_mon_to_year_mean → idxmax(lev) → /(1025·1e6)."""
-    ds = xr.open_mfdataset(chunk_paths, parallel=False, use_cftime=True,
+    ds = xr.open_mfdataset(chunk_paths, parallel=False, decode_times=CFTIME,
                            combine='by_coords')
     sub = ds.sel(basin=0, drop=True).sel(lat=26.5, method='nearest', drop=True)
     amoc_yr = weighted_mon_to_year_mean(sub, 'msftmz')
@@ -211,7 +212,7 @@ def gate_c():
     assert src, 'no /pool source for hist r1 tas'
     new = derive_tas_yr(src)
     legacy = xr.open_dataarray(legacy_path('historical', 'tas', 'r1i1p1f1'),
-                                use_cftime=True)
+                                decode_times=CFTIME)
     print(f'  legacy shape={legacy.shape}, new shape={new.shape}')
     print(f'  legacy time[0..2]: {[str(t)[:4] for t in legacy.time.values[:3]]}')
     print(f'  new    time[0..2]: {[str(t)[:4] for t in new.time.values[:3]]}')
@@ -232,7 +233,7 @@ def gate_d():
     assert src, 'no /pool source for ssp245 r2 msftmz'
     new = derive_amoc26_yr(src)
     legacy = xr.open_dataarray(legacy_path('ssp245', 'amoc26', 'r2i1p1f1'),
-                                use_cftime=True)
+                                decode_times=CFTIME)
     new_aligned = new.assign_coords(time=legacy.time)
     diff = float(np.nanmax(np.abs(legacy.values - new_aligned.values)))
     print(f'  legacy mean = {float(legacy.mean()):.4f} Sv')
@@ -289,7 +290,7 @@ def gate_e(skip=None):
             bad.append((sce, var, mem, 'MISSING'))
             continue
         try:
-            da = xr.open_dataarray(out, use_cftime=True)
+            da = xr.open_dataarray(out, decode_times=CFTIME)
             if var == 'amoc26' and 'lev' in da.coords:
                 da = da.drop_vars('lev')
             vals = da.values if da.values.ndim == 1 else da.mean(['lat','lon']).values
@@ -317,7 +318,7 @@ def report_amoc_ensemble():
             # Try legacy first, then bu1431
             for p in (legacy_path(sce, 'amoc26', mem), out_path(sce, 'amoc26', mem)):
                 if os.path.exists(p):
-                    da = xr.open_dataarray(p, use_cftime=True)
+                    da = xr.open_dataarray(p, decode_times=CFTIME)
                     years = np.array([t.year for t in da.time.values])
                     sel = da.values[(years>=2091) & (years<=2100)]
                     vals[mem] = float(sel.mean())

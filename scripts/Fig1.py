@@ -2,6 +2,7 @@
 # %%
 # LOAD PACKAGES
 
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
@@ -28,13 +29,15 @@ if __name__ == '__main__':
 
 def make_figure(data_dict, season='', window=10, region='EU', hosing='all', plot_bg='white', lag=0, weakening_xaxis=True, top_sv_axis=False, simple_eqs=True):
     plt.style.use('default')
-    plt.rcParams.update({'font.size': 10})
+    plt.rcParams.update(functions.PRINT_RC)
     if plot_bg == 'black':
         plt.style.use('dark_background')
         plt.rcParams['axes.facecolor'] = '#191919'
         plt.rcParams['figure.facecolor'] = '#191919'
 
-    fig = plt.figure(figsize=(16, 8))
+    canvas_w = 217.6  # mm; wider than 183 so the tight crop is 183 mm
+    fig = plt.figure(figsize=(canvas_w/25.4, canvas_w/2/25.4))
+    fig.set_size_inches(canvas_w/25.4, canvas_w/2/25.4, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
     gs = GridSpec(2, 2, width_ratios=[0.5, 0.5], height_ratios=[1, 1], wspace=0.25, hspace=0.2)
 
     # Left column: two vertical subplots
@@ -47,7 +50,7 @@ def make_figure(data_dict, season='', window=10, region='EU', hosing='all', plot
     has_top_axis = weakening_xaxis and top_sv_axis
     clean_corner = simple_eqs and weakening_xaxis and not top_sv_axis  # only bottom %-axis + simple eqs
     if clean_corner:
-        eqs_x, equation_y_pos, equation_y_spacing = 0.46, 1.18, 0.085  # top-right, right of dashed 0 line; midway between above-plot (1.3) and inside (0.92)
+        equation_y_pos, equation_y_spacing = 1.07, 0.1  # top-right, keylines start just right of the dashed 0 line (eqs_x below)
     else:
         eqs_x = 0.0
         equation_y_pos, equation_y_spacing = (1.43, 0.06) if has_top_axis else (1.3, 0.07)
@@ -56,14 +59,19 @@ def make_figure(data_dict, season='', window=10, region='EU', hosing='all', plot
     deep_amoc = hosing == 'all1Sv'
     c_xlim = (-12, 6) if deep_amoc else (-8, 6)
     c_ylim = (-2.0, 1.0) if deep_amoc else (-1.5, 1.0)
+    if clean_corner:
+        eqs_x = c_xlim[1] / (c_xlim[1] - c_xlim[0]) + 0.012 + 3 / (ax_right.get_position().width * fig.get_figwidth() * 72)  # axes fraction of 0 Sv (x inverted) + ~1 mm + 0.5 em
     functions.simulations_plot(data_dict, season=season, hos_type=hosing, window=window, region=region, ext_axs=[ax_left_top, ax_left_bottom], plot_bg=plot_bg)
     functions.regression_plot(data_dict, season=season, hos_type=hosing, window=window, region=region, ext_ax=ax_right, plot_bg=plot_bg, xlim=c_xlim, ylim=c_ylim, equation_y_pos=equation_y_pos, equation_y_spacing=equation_y_spacing, lag=lag, weakening_xaxis=weakening_xaxis, simple_eqs=simple_eqs, eqs_x=eqs_x)
+    if season:
+        for _ax in (ax_left_bottom, ax_right):  # the season prefix runs panel b's label into letter b, panel c's into panel a's secondary-axis label at 7 pt
+            _ax.yaxis.label.set_fontsize(6)
     if deep_amoc:
         ax_left_top.set_ylim(3.803081693368937, 22)   # 80% weakening floor (panel a)
 
     ax_right.text(eqs_x, equation_y_pos+equation_y_spacing,
                         "Regression results:",
-                        transform=ax_right.transAxes, fontsize=10, verticalalignment='baseline', color='black' if not plot_bg=='black' else 'white', fontweight='bold')
+                        transform=ax_right.transAxes, verticalalignment='baseline', fontsize=6, color='black' if not plot_bg=='black' else 'white', fontweight='bold')
 
     ax_left_top.tick_params(labelbottom=False)
 
@@ -82,7 +90,7 @@ def make_figure(data_dict, season='', window=10, region='EU', hosing='all', plot
                         0.02,  # Width of the secondary axis
                         new_height])  # height of secondary axis
 
-    secax.set_ylabel('AMOC weakening w.r.t. 1850–1899', labelpad=5, fontsize=10)
+    secax.set_ylabel('AMOC weakening w.r.t. 1850–1899', labelpad=2.68)
 
     secax.spines['top'].set_visible(False)
     secax.spines['left'].set_visible(False)
@@ -147,7 +155,7 @@ def make_figure(data_dict, season='', window=10, region='EU', hosing='all', plot
         [grouped_labels[i].insert(0, grouped_labels[i].pop(3)) for i in range(3)]
 
     for i in range(3):
-        grouped_labels[i] = [l[9:] if len(l) > 10 else l for l in grouped_labels[i]]
+        grouped_labels[i] = [re.sub(r'(\d)Sv', r'\1 Sv', l[9:]).strip().replace('-', '−').replace('lin.+', 'lin. +') if len(l) > 10 else l for l in grouped_labels[i]]
 
     # Create dummy handles for headings (no marker, invisible line)
     heading_handles = [Line2D([], [], color='none', label=heading, linewidth=0) for heading in column_headings]
@@ -156,7 +164,7 @@ def make_figure(data_dict, season='', window=10, region='EU', hosing='all', plot
     ge_ssp_keys = ['ssp126', 'ssp245', 'ssp370']
     ge_handles = [Line2D([], [], color=functions.hosing_colors[ssp]['ge'],
                          marker=functions.hosing_markers['ge'], linestyle='None',
-                         markersize=5, label='MPI-GE') for ssp in ge_ssp_keys]
+                         markersize=2.68, label='MPI-GE') for ssp in ge_ssp_keys]
 
     # Interleave headings, MPI-GE, and group items for legend
     final_handles = []
@@ -169,24 +177,26 @@ def make_figure(data_dict, season='', window=10, region='EU', hosing='all', plot
         final_handles.extend(h_group)
         final_labels.extend(l_group)
 
-    legend_y_anchor = 2.3 if has_top_axis else (2.18 if clean_corner else 2.25)
-    legend = ax_right.legend(final_handles, final_labels, ncol=3, frameon=False, handletextpad=1.5, columnspacing=2, bbox_to_anchor=(-0.04, legend_y_anchor), loc='upper left', fontsize=10)
+    legend_y_anchor = 2.3 if has_top_axis else (2.26 if clean_corner else 2.25)
+    legend = ax_right.legend(final_handles, final_labels, ncol=3, frameon=False, handlelength=1.53, handletextpad=1.15, columnspacing=1.53, labelspacing=0.38, bbox_to_anchor=(-0.04, legend_y_anchor), loc='upper left')
 
     # Make headings bold and center them
     for text, handle in zip(legend.get_texts(), final_handles):
         if handle in heading_handles:
             text.set_weight('bold')
             text.set_ha('center')
-            text.set_color([functions.hosing_colors[ssp]['ge'] for ssp in ['ssp126', 'ssp245', 'ssp370']][heading_handles.index(handle)])
 
     subplot_labels = ['a', 'b', 'c']
     for i, ax in enumerate([ax_left_top, ax_left_bottom]):
         left = ax.get_position().x0
         top = ax.get_position().y1
-        fig.text(left-0.03, top, subplot_labels[i], transform=fig.transFigure, fontsize=14, ha='right', va='center', fontweight='bold', color='black' if not plot_bg=='black' else 'white')
-    fig.text(ax_right.get_position().x0-0.04, ax_right.get_position().y1, subplot_labels[2], transform=fig.transFigure, fontsize=14, ha='right', va='center', fontweight='bold', color='black' if not plot_bg=='black' else 'white')
+        fig.text(left-0.03, top, subplot_labels[i], transform=fig.transFigure, fontsize=8, ha='right', va='center', fontweight='bold', color='black' if not plot_bg=='black' else 'white')
+    fig.draw_without_rendering()  # y-label extent of panel c, so letter c clears it
+    c_x = min(ax_right.get_position().x0-0.04, ax_right.yaxis.label.get_window_extent().transformed(fig.transFigure.inverted()).x0-0.004)
+    fig.text(c_x, ax_right.get_position().y1, subplot_labels[2], transform=fig.transFigure, fontsize=8, ha='right', va='center', fontweight='bold', color='black' if not plot_bg=='black' else 'white')
 
     savepath = f"../plots/Fig1_simulations_regression_plotbg-{plot_bg}_season-{season or 'annual'}_window-{window}_hosing-{hosing}_lag-{lag}_weakx-{weakening_xaxis}_topsv-{top_sv_axis}_simpleq-{simple_eqs}"
+    functions.fit_print_width(fig)
     fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight', transparent=True if plot_bg=='black' else False)
     fig.savefig(savepath + '.pdf', bbox_inches='tight', dpi=400, transparent=True if plot_bg=='black' else False)
 

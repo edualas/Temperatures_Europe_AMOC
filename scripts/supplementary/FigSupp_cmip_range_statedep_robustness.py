@@ -64,7 +64,7 @@ def make_figure(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_ds_dict,
                 aggregate_first=True, weakening_unit='pct',
                 cmip_range_predictors='w', version='statedep'):
     plt.style.use('default')
-    plt.rcParams.update({'font.size': 12})
+    plt.rcParams.update({**functions.PRINT_RC, 'font.size': 6})  # 6 pt base, as Fig. 3b (same panel scale)
     if plot_bg == 'black':
         plt.style.use('dark_background')
         plt.rcParams['axes.facecolor'] = '#191919'
@@ -84,8 +84,9 @@ def make_figure(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_ds_dict,
     else:
         raise ValueError(f"version must be 'statedep' or 'mode'; got {version!r}")
 
-    text_color = 'black' if plot_bg != 'black' else 'white'
-    fig, axes = plt.subplots(1, len(panels), figsize=(8.5 * len(panels), 14))
+    fig, axes = plt.subplots(1, len(panels), figsize=(183 / 25.4, 183 / 25.4 * 14 / 17))
+    fig.set_size_inches(183 / 25.4, 183 / 25.4 * 14 / 17, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
+    fig.subplots_adjust(top=0.9, bottom=0.05)
     for ax, (letter, desc, cr_ds, mode) in zip(axes, panels):
         functions.plot_net_cooling_ranges_mpi_cesm(
             reg_ds_mpi, reg_ds_cesm, masks,
@@ -95,24 +96,20 @@ def make_figure(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_ds_dict,
             aggregate_first=aggregate_first, amoc_extent=amoc_extent,
             weakening_unit=weakening_unit, cmip_range_ds=cr_ds,
             cmip_range_mode=mode, nahosmip_overlay=True)
-        # Decade label placement convention from FigSupp_cmip_cooling.py,
-        # cleared of the net-cooling-range top chrome (CMIP6 bars +
-        # "Projected AMOC weakening" reach ~1.06 axes frac).
-        ax.text(0.0, 1.07, f'{letter})  {desc}', transform=ax.transAxes,
-                fontsize=15, fontweight='bold', color=text_color,
-                ha='left', va='bottom')
 
-    # Each panel carries its own (right-hand) country row labels, so the
-    # inter-panel gutter must be wide enough to hold the longest country name
-    # of the left panel without overrunning the right panel.
-    fig.subplots_adjust(wspace=0.3)
+    # Each panel carries its own (right-hand) country row labels: the gutter holds them.
+    for ax in axes:
+        functions.wrap_legend(ax.get_legend())  # the one-line legend of Fig. 3b runs over the bars at this panel width
+    functions.place_range_panels(fig, axes)
+    functions.panel_headers(fig, axes, [desc for _, desc, _, _ in panels])
 
     savepath = (f'../plots/FigSupp_cmip_range_{version}_robustness_plotbg-{plot_bg}'
                 f'_cal-hosing_pred-{cmip_range_predictors}')
     functions.check_savepath(savepath)
-    fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight',
+    functions.fit_print_width(fig)
+    fig.savefig(savepath + '.png', dpi=300, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
-    fig.savefig(savepath + '.pdf', dpi=400, bbox_inches='tight',
+    fig.savefig(savepath + '.pdf', dpi=600, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
     return fig, savepath
 

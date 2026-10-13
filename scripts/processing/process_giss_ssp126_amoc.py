@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 import xarray as xr
+CFTIME = xr.coders.CFDatetimeCoder(use_cftime=True)  # xarray >= 2025.1: the use_cftime kwarg is deprecated
 import matplotlib.pyplot as plt
 from matplotlib.pyplot import cm
 
@@ -132,7 +133,7 @@ def derive_amoc26_yr(member):
     paths = sorted(glob(f"{RAW_DIR}/{member}/msftmz_Omon_*.nc"))
     assert len(paths) == len(CHUNKS), (
         f"{member}: expected {len(CHUNKS)} msftmz chunks, got {len(paths)}")
-    msftmz = xr.open_mfdataset(paths, parallel=False, use_cftime=True)
+    msftmz = xr.open_mfdataset(paths, parallel=False, decode_times=CFTIME)
     amoc_yr = weighted_mon_to_year_mean(
         msftmz.sel(basin=0, drop=True).sel(lat=26.5, method="nearest", drop=True),
         "msftmz",
@@ -150,7 +151,7 @@ if __name__ == "__main__":
     )
     print(f"verification: re-derive r1 from NCCS msftmz...")
     new_r1 = derive_amoc26_yr("r1i1p1f2")
-    legacy = xr.open_dataarray(LEGACY_R1, use_cftime=True)
+    legacy = xr.open_dataarray(LEGACY_R1, decode_times=CFTIME)
     new_r1_aligned = new_r1.assign_coords(time=legacy.time)
     diff = np.abs(legacy.values - new_r1_aligned.values).max()
     print(f"  r1 max|new-legacy| = {diff:.3e} Sv  over n={legacy.size} years")
@@ -186,7 +187,7 @@ if __name__ == "__main__":
             f = LEGACY_R1
         else:
             f = f"{OUT_DIR}/giss-e2-1-g_{m}_amoc26_yr.nc"
-        da = xr.open_dataarray(f, use_cftime=True)
+        da = xr.open_dataarray(f, decode_times=CFTIME)
         series[m] = da
 
     fig, ax = plt.subplots(figsize=(10, 5))

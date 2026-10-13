@@ -33,6 +33,7 @@ import threading
 
 import numpy as np
 import xarray as xr
+CFTIME = xr.coders.CFDatetimeCoder(use_cftime=True)  # xarray >= 2025.1: the use_cftime kwarg is deprecated
 
 
 # region CONFIG ----------------------------------------------------------------
@@ -395,7 +396,7 @@ def open_seasonal_tas(model, scenario, variant_id, season):
     """
     da = xr.open_dataset(
         resolve_seasonal_path(model, scenario, variant_id, season),
-        use_cftime=True)['tas']
+        decode_times=CFTIME)['tas']
     if scenario != 'historical':
         return da
     y0, y1 = HISTORICAL_YEARS
@@ -637,12 +638,12 @@ def open_canonical(path, model, *, tol=1e-3, as_dataset=False):
     ``as_dataset`` selects between ``open_dataarray`` (default; for
     single-variable yearly caches) and ``open_dataset`` (True when the
     file has multiple vars or aux dims like ``bnds`` / ``height`` that
-    need dropping). Both honour ``use_cftime=True``.
+    need dropping). Both honour ``decode_times=CFTIME``.
     """
     if as_dataset:
-        opened = xr.open_dataset(path, use_cftime=True)
+        opened = xr.open_dataset(path, decode_times=CFTIME)
     else:
-        opened = xr.open_dataarray(path, use_cftime=True)
+        opened = xr.open_dataarray(path, decode_times=CFTIME)
     # AMOC@26.5N files (and any other scalar-grid product) lack a 2D lat/lon
     # grid — they're 1D time series. Nothing to snap; return unchanged.
     if 'lat' not in opened.dims or 'lon' not in opened.dims:

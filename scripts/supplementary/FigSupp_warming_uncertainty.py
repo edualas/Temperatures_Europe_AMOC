@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
+import matplotlib.transforms as mtransforms
 plt.rcParams.update({'font.size': 12})
 
 import importlib
@@ -15,6 +16,7 @@ if "__file__" in globals():
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import functions
 importlib.reload(functions)
+import FigSupp_synthetic_scaling_factors as ssf  # type: ignore
 
 ########################################
 # %%
@@ -53,9 +55,8 @@ def _draw_warming_panel(ax, hosmip_reg_ds_dict, masks, *,
     line_alpha = 1.0
     vertical_offsets = {'ssp126': 1., 'ssp245': 0., 'ssp370': -1.}
 
-    regions_cutoff30k = [r for r in functions.regions
-                         if r not in ['LU', 'CY', 'XK', 'ME', 'SI', 'MK', 'AL']]
-    countries = list(reversed(regions_cutoff30k))
+    # rows in the order of panel b (functions.plot_net_cooling_ranges_mpi_cesm)
+    countries = [r for r in reversed(functions.regions_by_net_cooling) if r in functions.regions_cutoff30k]
     rows = ['EU'] + countries
     group_centers = np.arange(len(rows))
 
@@ -67,7 +68,7 @@ def _draw_warming_panel(ax, hosmip_reg_ds_dict, masks, *,
 
     def _amean(da, model, region):
         return float(functions.weighted_area_lat(
-            _select(da, model, region)).mean('lat').mean('lon').values)
+            _select(da, model, region)).mean(('lat', 'lon')).values)
 
     def _ncp_pct(amoc_pi, amoc_90, T_90, T_ref_, slope_Sv):
         weakening_sv = amoc_pi - (amoc_90 - (T_90 - T_ref_) / slope_Sv)
@@ -116,9 +117,9 @@ def _draw_warming_panel(ax, hosmip_reg_ds_dict, masks, *,
                         color=color, clip_on=True)
 
             ax.scatter(ncp_mpi, y, alpha=bar_alpha, color=color,
-                       marker='*', s=40, edgecolors='none', zorder=11)
+                       marker='*', s=9.2, edgecolors='none', zorder=11)
             ax.scatter(ncp_can, y, alpha=bar_alpha, color=color,
-                       marker='X', s=22, edgecolors='none', zorder=12)
+                       marker='X', s=5.2, edgecolors='none', zorder=12)
 
             if np.isfinite(ncp_mpi) and ncp_mpi < 100:
                 _hyb = (np.nan if not np.isfinite(ncp_hybrid) else ncp_hybrid)
@@ -131,36 +132,31 @@ def _draw_warming_panel(ax, hosmip_reg_ds_dict, masks, *,
                 print(f"{r:<4} {ssp_i:<7} {ncp_mpi:8.2f} {_hyb:8.2f} "
                       f"{_can:8.2f} {direction:>4}")
 
-    for i in range(len(rows)):
-        if i % 2 == 1:
-            ax.add_patch(Rectangle((0, group_centers[i] - 0.5), 120, 1,
-                                   color='black', alpha=0.15, zorder=0,
-                                   linewidth=0, clip_on=False))
+    # Opaque bands as in Fig. 3; their extension under the country names is added once the tick labels exist.
+    band_color = tuple(0.85 * c for c in plt.matplotlib.colors.to_rgb(plt.rcParams['axes.facecolor']))
+    band_rows = [group_centers[i] for i in range(len(rows)) if i % 2 == 1]
+    for yc in band_rows:
+        ax.add_patch(Rectangle((0, yc - 0.5), 100, 1, color=band_color, zorder=0, linewidth=0, clip_on=False))
 
     legend_color = 'white' if plot_bg == 'black' else 'black'
     legend_handles = [
         Line2D([], [], marker='*', color=legend_color, linestyle='None',
-               markersize=8, markeredgewidth=0, alpha=bar_alpha),
+               markersize=3.9, markeredgewidth=0, alpha=bar_alpha),
         Line2D([], [], color=legend_color, alpha=0.3,
-               linewidth=5, solid_capstyle='butt'),
+               linewidth=2.4, solid_capstyle='butt'),
         Line2D([], [], marker='X', color=legend_color, linestyle='None',
-               markersize=6, markeredgewidth=0, alpha=bar_alpha),
+               markersize=2.9, markeredgewidth=0, alpha=bar_alpha),
     ]
     legend_labels = [
         'NAHosMIP MPI-ESM1.2-LR',
         'Range until NAHosMIP MPI-ESM1.2-LR with CanESM5 warming (hybrid)',
         'NAHosMIP CanESM5',
     ]
-    ax.legend(legend_handles, legend_labels,
-              frameon=True, bbox_to_anchor=(0.02, 0.055),
-              loc='lower left', fontsize=10,
-              title=('Annual' if season=='' else f'Seasonal ({season.upper()})') + ' net-cooling AMOC weakening w.r.t. ' + ('preindustrial' if T_ref=='pi' else 'present-day'),
-              title_fontproperties={'weight': 'bold', 'size': 10})
 
     for x in np.arange(10, 100, 10):
         ax.axvline(x=x, ymin=0.03,
                    color='black' if plot_bg != 'black' else 'white',
-                   linestyle=(0, (1, 4)), linewidth=0.8, alpha=1.0, zorder=0)
+                   linestyle=(0, (1, 4)), linewidth=0.43, alpha=1.0, zorder=0)
 
     ax.set_ylim(-1.7, len(countries) + 0.5)
     ax.set_xlim(0, 100)
@@ -170,7 +166,7 @@ def _draw_warming_panel(ax, hosmip_reg_ds_dict, masks, *,
     ax.xaxis.set_ticks_position('both')
     ax.xaxis.set_label_position('bottom')
     ax.tick_params(axis='x', which='both', top=True, labeltop=True,
-                   bottom=True, labelbottom=True, labelsize=10)
+                   bottom=True, labelbottom=True, labelsize=6)
 
     ax.yaxis.tick_right()
     ax.yaxis.set_label_position('right')
@@ -178,10 +174,20 @@ def _draw_warming_panel(ax, hosmip_reg_ds_dict, masks, *,
     ax.tick_params(axis='y', which='both', length=0)
     ax.set_yticklabels(['European mean'] +
                        [functions.country_names[c] for c in countries])
+    # bands run on under the country names to 2 pt past the longest (pt from the spine, as in Fig. 3)
+    ext_pt = (max(t.get_window_extent(ax.figure.canvas.get_renderer()).width for t in ax.get_yticklabels())
+              * 72 / ax.figure.dpi + plt.rcParams['ytick.major.pad'] + 2)
+    tr = mtransforms.blended_transform_factory(
+        mtransforms.Affine2D().scale(1 / 72) + ax.figure.dpi_scale_trans
+        + mtransforms.ScaledTranslation(1, 0, ax.transAxes), ax.transData)
+    for yc in band_rows:
+        ax.add_patch(Rectangle((-1, yc - 0.5), ext_pt + 1, 1, transform=tr, color=band_color, zorder=0,
+                               linewidth=0, clip_on=False)).set_in_layout(False)
     ax.spines['top'].set_visible(True)
     ax.spines['right'].set_visible(False)
     ax.spines['left'].set_visible(False)
     ax.spines['bottom'].set_position(('axes', 0.03))
+    return legend_handles, legend_labels
 
 
 ########################################
@@ -190,46 +196,56 @@ def _draw_warming_panel(ax, hosmip_reg_ds_dict, masks, *,
 
 def make_figure(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_ds_dict,
                 reg_ds_giss=None, *, season='', T_ref='pi',
-                plot_bg='white', giss_time_period='2101-2300'):
+                plot_bg='white', giss_time_period='2101-2300',
+                cmip_range_ds=None):
     if T_ref not in ('pi', 'pd'):
         raise NotImplementedError("T_ref must be 'pi' or 'pd'.")
     if season != '':
         raise NotImplementedError("Only annual (season='') is implemented.")
 
     plt.style.use('default')
-    plt.rcParams.update({'font.size': 12})
+    plt.rcParams.update({**functions.PRINT_RC, 'font.size': 6})  # 6 pt base, as Fig. 3b (same panel scale)
     if plot_bg == 'black':
         plt.style.use('dark_background')
         plt.rcParams['axes.facecolor'] = '#191919'
         plt.rcParams['figure.facecolor'] = '#191919'
 
-    fig, axes = plt.subplots(1, 2, figsize=(8.5 * 2, 14))
-    text_color = 'black' if plot_bg != 'black' else 'white'
+    fig, axes = plt.subplots(1, 2, figsize=(183 / 25.4, 183 / 25.4 * 14 / 17))
+    fig.set_size_inches(183 / 25.4, 183 / 25.4 * 14 / 17, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
+    fig.subplots_adjust(top=0.9, bottom=0.05)
 
-    _draw_warming_panel(axes[0], hosmip_reg_ds_dict, masks,
-                        season=season, T_ref=T_ref, plot_bg=plot_bg, title=False)
+    h_a, l_a = _draw_warming_panel(axes[0], hosmip_reg_ds_dict, masks,
+                                   season=season, T_ref=T_ref, plot_bg=plot_bg, title=False)
+    leg_b = {}
+    axes[1].legend = lambda *a, **k: leg_b.update(a=a, k=k)  # keep panel b's legend entries, draw them below in panel a
 
     functions.plot_net_cooling_ranges_mpi_cesm(
         reg_ds_mpi, reg_ds_cesm, masks,
         hosmip_reg_ds_dict=hosmip_reg_ds_dict,
         hosmip_markers=True, T_ref=T_ref, season=season, plot_bg=plot_bg,
         reg_ds_giss=reg_ds_giss, giss_time_period=giss_time_period,
-        ext_ax=axes[1], title=False, aggregate_first=True)
+        ext_ax=axes[1], title=False, aggregate_first=True,
+        cmip_range_ds=cmip_range_ds)
 
     panel_labels = ['Uncertainty due to projected baseline warming',
                     'Fig. 3b with additional NAHosMIP markers'] # change back if we do not chose Fig3_simple.py as main Fig. 3
-    for i, (ax, lbl) in enumerate(zip(axes, panel_labels)):
-        ax.text(0.0, 1.07, f'{chr(97 + i)})  {lbl}',
-                transform=ax.transAxes, fontsize=14, fontweight='bold',
-                color=text_color, ha='left', va='bottom')
-
-    fig.subplots_adjust(wspace=0.3)
+    # One legend for both panels in panel a's empty lower rows (panel b's own legend sat over its bars): panel b's
+    # entries plus panel a's hybrid range (a's two markers are among b's NAHosMIP entries).
+    del axes[1].legend
+    (h_b, l_b), k_b = leg_b['a'], leg_b['k']
+    leg = axes[0].legend(h_b + h_a[1:2], l_b + l_a[1:2], **{**k_b, 'bbox_to_anchor': (0.02, 0.055)})
+    functions.wrap_legend(leg)
+    functions.place_range_panels(fig, axes)
+    functions.panel_headers(fig, axes, panel_labels)
 
     savepath = (f'../plots/FigSupp_warming_uncertainty'
-                f'_Tref-{T_ref}_season-{season or "annual"}_plotbg-{plot_bg}')
-    fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight',
+                f'_Tref-{T_ref}_season-{season or "annual"}_plotbg-{plot_bg}'
+                + (f"_cr-{cmip_range_ds.attrs['state_dep']}-{cmip_range_ds.attrs['cal_set']}"
+                   if cmip_range_ds is not None else '_cr-off'))
+    functions.fit_print_width(fig)
+    fig.savefig(savepath + '.png', dpi=300, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
-    fig.savefig(savepath + '.pdf', dpi=400, bbox_inches='tight',
+    fig.savefig(savepath + '.pdf', dpi=600, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
     return fig, savepath
 
@@ -244,7 +260,10 @@ if __name__ == '__main__':
     fig, savepath = make_figure(reg_ds_mpi, reg_ds_cesm, masks,
                                 hosmip_reg_ds_dict,
                                 reg_ds_giss=reg_ds_giss,
-                                season='', T_ref=T_ref, plot_bg=plot_bg)
+                                season='', T_ref=T_ref, plot_bg=plot_bg,
+                                cmip_range_ds=ssf.get_cmip_range_ds(
+                                    recompute=False, state_dep='pooled',
+                                    cal_set='hosing', T_ref=T_ref))
     print(f"Saved {savepath}")
 
 # %%

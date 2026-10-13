@@ -68,7 +68,7 @@ def make_figure(masks, lin_ds, model='cesm', region='EU', season='',
     if model not in ('cesm', 'giss'):
         raise ValueError(f'model must be cesm|giss, got {model!r}')
     plt.style.use('default')
-    plt.rcParams.update({'font.size': 12})
+    plt.rcParams.update({**functions.PRINT_RC, 'font.size': 6})  # 6 pt base: six panels in 183 mm (s = 0.44)
     if plot_bg == 'black':
         plt.style.use('dark_background')
         plt.rcParams['axes.facecolor'] = '#191919'
@@ -77,11 +77,13 @@ def make_figure(masks, lin_ds, model='cesm', region='EU', season='',
     fg = 'black' if plot_bg != 'black' else 'white'
     bg = 'white' if plot_bg != 'black' else '#191919'
 
-    fig = plt.figure(figsize=(20, 11))
+    sc = 0.44  # print scale: old crop ~415 mm → 183 mm (fit_print_width sets the exact canvas)
+    fig = plt.figure(figsize=(20 * sc, 11 * sc))
+    fig.set_size_inches(20 * sc, 11 * sc, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
     gs = fig.add_gridspec(
         2, 3,
         height_ratios=[1.05, 1.0], width_ratios=[1.0, 1.0, 1.0],
-        wspace=0.22, hspace=0.15,
+        wspace=0.22, hspace=0.32,  # 0.15 → 0.32: colourbar labels, stippling key and the d–f headers need the band at print size
     )
     ax_a = fig.add_subplot(gs[0, 0], projection=ccrs.Robinson(central_longitude=8))
     ax_b = fig.add_subplot(gs[0, 1], projection=ccrs.Robinson(central_longitude=8))
@@ -94,6 +96,8 @@ def make_figure(masks, lin_ds, model='cesm', region='EU', season='',
     # TOP ROW: maps of baseline R², partial R², ΔR²_total
     # ------------------------------------------------------------------
     lin = lin_ds.sel(season=season)
+    if lin.lon.diff('lon').max() > 2 * lin.lon.diff('lon').min():  # cut across 0°E (data package): one block for pcolormesh
+        lin = lin.assign_coords(lon=(lin.lon + 180) % 360 - 180).sortby('lon')
     baseline_r2 = lin['baseline_r2'].values
     partial_r2 = lin['partial_r2'].values
     delta_r2 = lin['delta_r2_total'].values
@@ -116,17 +120,17 @@ def make_figure(masks, lin_ds, model='cesm', region='EU', season='',
         norm = mcolors.BoundaryNorm(bounds, cmap.N, clip=False)
 
         ax.spines['geo'].set_visible(False)
-        ax.set_rasterized(True)
-        ax.coastlines(color=fg, linewidth=0.5, zorder=3)
-        ax.add_feature(cfeature.BORDERS, edgecolor=fg, linewidth=0.5)
+        ax.coastlines(color=fg, linewidth=0.25, zorder=3)
+        ax.add_feature(cfeature.BORDERS, edgecolor=fg, linewidth=0.25)
         ax.add_feature(cfeature.OCEAN, facecolor=bg, zorder=2)
         pcm = ax.pcolormesh(
             lons, lats, field,
             cmap=cmap, norm=norm, transform=ccrs.PlateCarree(), shading='auto',
         )
+        functions.rasterize_map(ax, pcm)
         ax.scatter(
             stipple_lon, stipple_lat,
-            s=4.5, c=fg, marker='.', linewidths=0, alpha=0.85,
+            s=1.6, c=fg, marker='.', linewidths=0, alpha=0.85,
             transform=ccrs.PlateCarree(), zorder=4,
         )
         ax.set_extent([-18.5, 38.5, 34.8, 72], crs=ccrs.PlateCarree())
@@ -134,32 +138,18 @@ def make_figure(masks, lin_ds, model='cesm', region='EU', season='',
         functions.add_square(ax, -30, -18, 68, 75, colour=bg)
         cbar = fig.colorbar(pcm, ax=ax, orientation='horizontal',
                             pad=0.05, aspect=30, extend='max', ticks=bounds)
-        cbar.set_label(label, fontsize=10)
+        cbar.set_label(label)
         return cbar
 
-    _draw_map(ax_a, baseline_r2, vmin=0.0, vmax=1.0, n_bins=10,
+    cbar_a = _draw_map(ax_a, baseline_r2, vmin=0.0, vmax=1.0, n_bins=10,
               label='baseline R² (linear share of total variance)')
     _draw_map(ax_b, partial_r2, vmin=0.0, vmax=0.25, n_bins=5,
               label='partial R² (curvature share of residuals)')
     _draw_map(ax_c, delta_r2, vmin=0.0, vmax=0.05, n_bins=5,
-              label='ΔR²_total (curvature share of total variance)')
+              label=r'$\Delta\mathrm{R}^2_\mathrm{total}$ (curvature share of total variance)')
 
     season_suffix = f' ({season.upper()})' if season else ''
     model_label = 'CESM2' if model == 'cesm' else 'GISS-E2-1-G'
-    ax_a.set_title(f'a) baseline R² ({model_label}){season_suffix}', fontsize=12, loc='left')
-    ax_b.set_title(f'b) partial R² ({model_label}){season_suffix}', fontsize=12, loc='left')
-    ax_c.set_title(f'c) ΔR²_total ({model_label}){season_suffix}', fontsize=12, loc='left')
-
-    if model == 'cesm':
-        caption = ('Stippling: RESET F-test rejects linearity at 5% '
-                   '(CESM2 pooled ssp126+ssp585; HAC SE, maxlags=window−1).')
-    else:
-        caption = ('Stippling: RESET F-test rejects linearity at 5% '
-                   f'(GISS-E2-1-G ssp245 pooled members − composite; '
-                   f'fit window {giss_time_period[0]}-{giss_time_period[1]}; '
-                   f'HAC SE, maxlags=window−1).')
-    fig.text(0.5, 0.92, caption, fontsize=10, ha='center',
-             style='italic', color=fg)
 
     # ------------------------------------------------------------------
     # BOTTOM ROW d): canonical pooled regression scatter
@@ -171,10 +161,11 @@ def make_figure(masks, lin_ds, model='cesm', region='EU', season='',
             combined_reg=True, add_combined_intercept=True,
             no_plots=False, ext_ax=ax_d, plot_bg=plot_bg,
             compute_linearity=True, season=season, xlim=50, low_ylim=-8,
-            equation_y_pos=0.30, equation_y_spacing=0.08,  # fraction-tall simple_eqs
+            equation_y_pos=0.04 + 2 * 10 / (ax_d.get_position().height * fig.get_figheight() * 72),
+            equation_y_spacing=10 / (ax_d.get_position().height * fig.get_figheight() * 72),  # rows 10 pt apart (stacked °C/10%)
         )
         lc = functions.cesm_regressions.last_call
-        x_label = 'Additional AMOC weakening [%]'
+        x_label = 'Additional AMOC weakening (%)'
         x_extrap_dir = +1   # CESM x grows positive (more weakening); extrapolate right
     else:
         functions.giss_regressions(
@@ -184,14 +175,20 @@ def make_figure(masks, lin_ds, model='cesm', region='EU', season='',
             plot_bg=plot_bg, add_combined_intercept=True,
         )
         lc = functions.giss_regressions.last_call
-        x_label = 'AMOC deviation from composite mean [Sv]'
+        for _lim, _set, _t in ((ax_d.get_xlim(), ax_d.set_xlim, ax_d.get_xticks()), (ax_d.get_ylim(), ax_d.set_ylim, ax_d.get_yticks())):
+            _set(_t[_t <= _lim[0]].max(), _t[_t >= _lim[1]].min())  # widen to the enclosing ticks: axes end on ticks
+        # legend and equation into the empty upper-left / lower-right corners (at print size they sat on the scatter)
+        _leg = ax_d.get_legend()
+        _leg.set_loc('upper left')
+        _leg.get_texts()[0].set_text(_leg.get_texts()[0].get_text().replace(' (', '\n('))
+        for t in ax_d.texts:  # knock the dashed 0 line out behind the equation
+            if t.get_text().startswith('Combined:'):
+                t.set_position((0.3, 0.1)); t.set_bbox(dict(facecolor=bg, edgecolor='none', pad=0.3))
+        x_label = 'AMOC deviation from composite mean (Sv)'
         # GISS x is bipolar (members above/below composite); extrapolate
         # toward the further-from-zero side of the data.
         x_extrap_dir = 0
 
-    ax_d.set_title(
-        f'd) {region}-mean {model_label} pooled regression{season_suffix}',
-        fontsize=12, loc='left')
 
     # ------------------------------------------------------------------
     # Common per-point arrays for panels e and f
@@ -208,8 +205,7 @@ def make_figure(masks, lin_ds, model='cesm', region='EU', season='',
                      transform=_ax.transAxes, ha='center', va='center',
                      fontsize=11, color=fg, style='italic')
             _ax.set_xticks([]); _ax.set_yticks([])
-            _ax.set_title(f'{_label}) (skipped){season_suffix}',
-                          fontsize=12, loc='left')
+            _ax.set_title(f'{_label}) (skipped){season_suffix}', loc='left')
         # Skip the bottom-row scatter drawing; jump to save.
         tp_tag = ''
         if model == 'giss':
@@ -217,9 +213,10 @@ def make_figure(masks, lin_ds, model='cesm', region='EU', season='',
         savepath = (f'../plots/FigSupp_{model}_linearity{tp_tag}'
                     f'_var-{var}_region-{region}'
                     f"_season-{season or 'annual'}_plotbg-{plot_bg}")
-        fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight',
+        functions.fit_print_width(fig)
+        fig.savefig(savepath + '.png', dpi=300, bbox_inches='tight',
                     transparent=True if plot_bg == 'black' else False)
-        fig.savefig(savepath + '.pdf', dpi=400, bbox_inches='tight',
+        fig.savefig(savepath + '.pdf', dpi=600, bbox_inches='tight',
                     transparent=True if plot_bg == 'black' else False)
         return fig, savepath
 
@@ -243,9 +240,9 @@ def make_figure(masks, lin_ds, model='cesm', region='EU', season='',
             cl = functions.hosing_colors[scen_names[k]]['ge']
         except KeyError:
             cl = '#888888'
-        ax_e.scatter(x_amoc[k], resid[k], marker='o', color=cl, s=18,
+        ax_e.scatter(x_amoc[k], resid[k], marker='o', color=cl, s=3.5,
                      alpha=0.6, linewidths=0, clip_on=False)
-    ax_e.axhline(0, color=fg, lw=1.0, ls='--')
+    ax_e.axhline(0, color=fg, lw=0.5, ls='--')
 
     if np.isfinite(g2) and np.isfinite(g3) and len(x_amoc) > 4:
         # Augmented-minus-linear correction: zero-mean by construction so it
@@ -255,17 +252,17 @@ def make_figure(masks, lin_ds, model='cesm', region='EU', season='',
         yhat_aug_curve = (beta0_aug + beta1_aug * x_curve
                           + g2 * yhat_curve**2 + g3 * yhat_curve**3)
         y_curve = yhat_aug_curve - yhat_curve
-        ax_e.plot(x_curve, y_curve, color='#3d8fd4', lw=2.0,
-                  label='ŷ_aug(x) − ŷ_M₀(x)  (augmented correction)')
-        ax_e.legend(loc='lower left', frameon=False, fontsize=9)
+        ax_e.plot(x_curve, y_curve, color='#3d8fd4', lw=0.87,
+                  label=r'ŷ$_\mathrm{aug}$(x) − ŷ$_\mathrm{M0}$(x)' + '\n(augmented correction)')
+        if model == 'giss':  # residuals fill the lower left: legend above them
+            ax_e.set_ylim(-0.8, 1.0)
+        ax_e.legend(loc='lower left' if model == 'cesm' else 'upper left', frameon=False, fontsize=5)
 
     ax_e.set_xlabel(x_label)
-    ax_e.set_ylabel('Residual e₀ = y − ŷ [°C]')
+    ax_e.set_ylabel('Residual e$_0$ = y − ŷ (°C)')
     ax_e.set_xlim(ax_d.get_xlim())
     ax_e.spines['top'].set_visible(False)
     ax_e.spines['right'].set_visible(False)
-    ax_e.set_title(f'e) {region}-mean residuals (RESET diagnostic){season_suffix}',
-                   fontsize=12, loc='left')
 
     # ------------------------------------------------------------------
     # BOTTOM ROW f): M₀ line + augmented curve over the data range
@@ -275,7 +272,7 @@ def make_figure(masks, lin_ds, model='cesm', region='EU', season='',
             cl = functions.hosing_colors[scen_names[k]]['ge']
         except KeyError:
             cl = '#888888'
-        ax_f.scatter(x_amoc[k], y_dat[k], marker='o', color=cl, s=18,
+        ax_f.scatter(x_amoc[k], y_dat[k], marker='o', color=cl, s=3.5,
                      alpha=0.6, linewidths=0, clip_on=False)
 
     x_min_data = float(np.nanmin(x_amoc))
@@ -294,38 +291,52 @@ def make_figure(masks, lin_ds, model='cesm', region='EU', season='',
                      + g2 * yhat_M0_full**2
                      + g3 * yhat_M0_full**3)
 
-    ax_f.plot(x_full, yhat_M0_full, color=fg, lw=1.2, ls='-',
-              label='linear: ŷ(x) = β̂₀ + β̂₁·x', zorder=4)
-    ax_f.plot(x_full, yhat_aug_full, color='#3d8fd4', lw=2.4, ls='-',
-              label='augmented: + γ̂₂·ŷ(x)² + γ̂₃·ŷ(x)³', zorder=5)
+    ax_f.plot(x_full, yhat_M0_full, color=fg, lw=0.6, ls='-',
+              label=r'linear: ŷ(x) = $\beta_0$ + $\beta_1$·x', zorder=4)
+    ax_f.plot(x_full, yhat_aug_full, color='#3d8fd4', lw=1, ls='-',
+              label=r'augmented: + $\gamma_2$·ŷ(x)² + $\gamma_3$·ŷ(x)³', zorder=5)
 
-    ax_f.axhline(0, color=fg, lw=1.0, ls='--', zorder=2)
-    ax_f.axvline(0, color=fg, lw=1.0, ls='--', zorder=2)
+    ax_f.axhline(0, color=fg, lw=0.5, ls='--', zorder=2)
+    ax_f.axvline(0, color=fg, lw=0.5, ls='--', zorder=2)
     ax_f.set_xlabel(x_label)
     ax_f.set_ylabel(ax_d.get_ylabel())
     ax_f.set_xlim(x_full[0], x_full[-1])
+    _t = ax_f.get_xticks()  # widen to the enclosing ticks: axes end on ticks
+    ax_f.set_xlim(_t[_t <= x_full[0]].max(), _t[_t >= x_full[-1]].min())
     ax_f.set_ylim(ax_d.get_ylim())
     ax_f.spines['top'].set_visible(False)
     ax_f.spines['right'].set_visible(False)
-    ax_f.set_title(f'f) {region}-mean linear vs augmented prediction{season_suffix}',
-                   fontsize=12, loc='left')
-    ax_f.legend(loc='lower left', frameon=False, fontsize=9)
+    ax_f.legend(loc='lower left' if model == 'cesm' else 'lower right', fontsize=5,  # GISS: lines run through the lower left
+                frameon=True, facecolor=bg, edgecolor='none', framealpha=1)  # opaque: knocks out the dashed 0 line
 
     sign_str = lambda s: '+' if s > 0 else ('−' if s < 0 else '0')
     annot = (
         f'baseline R² = {lc["baseline_r2"]:.3f}\n'
-        f'partial R²  = {lc["partial_r2"]:.3f}\n'
-        f'ΔR²_total   = {lc["delta_r2_total"]:.4f}\n'
-        f'RESET p     = {lc["reset_pvalue"]:.3f}\n'
-        f'(γ̂₂, γ̂₃)   = ({sign_str(lc["beta2_sign"])},{sign_str(lc["beta3_sign"])})'
+        f'partial R² = {lc["partial_r2"]:.3f}\n'
+        rf'$\Delta\mathrm{{R}}^2_\mathrm{{total}}$ = {lc["delta_r2_total"]:.4f}' '\n'
+        f'RESET p = {lc["reset_pvalue"]:.3f}\n'
+        r'($\gamma_2$, $\gamma_3$) = ' + f'({sign_str(lc["beta2_sign"])},{sign_str(lc["beta3_sign"])})'
     )
     ax_f.text(
-        0.03, 0.55, annot,
-        transform=ax_f.transAxes, fontsize=9,
-        va='center', ha='left', family='monospace',
-        bbox=dict(facecolor=bg, edgecolor=fg, alpha=0.85,
+        0.03, 0.55 if model == 'cesm' else 0.97, annot,  # GISS: the scatter runs through the middle left
+        transform=ax_f.transAxes, fontsize=5,
+        va='center' if model == 'cesm' else 'top', ha='left',
+        bbox=dict(facecolor=bg, edgecolor=fg, alpha=0.85, linewidth=0.4,
                   boxstyle='round,pad=0.4'),
     )
+
+    functions.panel_headers(fig, [ax_a, ax_b, ax_c], [f'baseline R² ({model_label}){season_suffix}', f'partial R² ({model_label}){season_suffix}',
+                                                      rf'$\Delta\mathrm{{R}}^2_\mathrm{{total}}$ ({model_label}){season_suffix}'])
+    dy_d = functions.panel_headers(fig, [ax_d, ax_e, ax_f], [f'{region}-mean {model_label} pooled regression{season_suffix}',
+                                                            f'{region}-mean residuals (RESET diagnostic){season_suffix}',
+                                                            f'{region}-mean linear vs augmented prediction{season_suffix}'], letters='def')
+    # stippling key centred in the band between the colourbar labels and the panel d–f headers (the fit details
+    # of the old caption line belong in the figure caption)
+    fig.draw_without_rendering()
+    y_key = (cbar_a.ax.get_tightbbox().y0 + ax_d.bbox.y1 + (dy_d + 6) * fig.dpi / 72) / 2 / fig.bbox.height  # header cap height ~6 pt
+    fig.legend([plt.Line2D([], [], marker='.', color=fg, linestyle='None', markersize=2.5)],
+               ['Stippling: RESET F-test rejects linearity at 5%'], loc='center', bbox_to_anchor=(0.5, y_key),
+               frameon=False, fontsize=6, handletextpad=0.2, borderpad=0, borderaxespad=0)
 
     # ------------------------------------------------------------------
     # SAVE — filename encodes model + (giss_time_period if giss)
@@ -336,9 +347,10 @@ def make_figure(masks, lin_ds, model='cesm', region='EU', season='',
     savepath = (f'../plots/FigSupp_{model}_linearity{tp_tag}'
                 f'_var-{var}_region-{region}'
                 f"_season-{season or 'annual'}_plotbg-{plot_bg}")
-    fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight',
+    functions.fit_print_width(fig)
+    fig.savefig(savepath + '.png', dpi=300, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
-    fig.savefig(savepath + '.pdf', dpi=400, bbox_inches='tight',
+    fig.savefig(savepath + '.pdf', dpi=600, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
     return fig, savepath
 

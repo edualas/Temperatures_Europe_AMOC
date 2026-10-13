@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import BoundaryNorm
 from matplotlib.patches import Rectangle
 from matplotlib import ticker
-plt.rcParams.update({'font.size': 12})
 import cartopy.crs as ccrs
 import colorsys
 
@@ -30,7 +29,7 @@ if __name__ == '__main__':
 
 def make_figure(reg_ds_mpi, only_pi=False, plot_season='', plot_bg='white', weakening_primary=True, show_cmip_range_contours=True, weakening_only=True, future_window=None, cbar1_left=False):
     plt.style.use('default')
-    plt.rcParams.update({'font.size': 12})
+    plt.rcParams.update(functions.PRINT_RC)
     # CMIP6 weakening envelope for the chosen future window (canonical global
     # when future_window is None). Shared by net_cooling_point_map and the
     # colorbar range bars so contours and bars use one envelope.
@@ -52,7 +51,11 @@ def make_figure(reg_ds_mpi, only_pi=False, plot_season='', plot_bg='white', weak
     reg_plot_labels = ['Annual mean', 'Summer (JJA)', 'Winter (DJF)']
 
     gridspec_kw = {'height_ratios': [1, 0.05, 1]} if only_pi else {'height_ratios': [1, 0.1, 1, 1]}
-    fig, axes = plt.subplots(nrows, ncols, figsize=(12, 3*(nrows-1)), subplot_kw={'projection': ccrs.Robinson(central_longitude=8)}, constrained_layout=False, gridspec_kw=gridspec_kw)
+    # Canvas wider than 183 mm so the figure is 183 mm after the tight crop; height grows by
+    # the same factor (the maps have a fixed aspect).
+    canvas_w = 203.2 if only_pi else 202.05  # the two layouts crop to different widths
+    fig, axes = plt.subplots(nrows, ncols, figsize=(canvas_w/25.4, 1.8*(nrows-1) * canvas_w/183), subplot_kw={'projection': ccrs.Robinson(central_longitude=8)}, constrained_layout=False, gridspec_kw=gridspec_kw)
+    fig.set_size_inches(canvas_w/25.4, 1.8*(nrows-1) * canvas_w/183, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
     axes = axes.flatten()
 
     for i in range(ncols):
@@ -74,7 +77,7 @@ def make_figure(reg_ds_mpi, only_pi=False, plot_season='', plot_bg='white', weak
         mappable = functions.plot_regression_coefficients(reg_ds_mpi, season=season, ext_ax=axes[i], plot_bg=plot_bg, custom_cmap=custom_cmap, colorbar_v_max=v_max)
         reg_mappables.append(mappable)
         panel_axes.append(axes[i])
-        axes[i].text(0.5, -0.03, reg_plot_labels[i], transform=axes[i].transAxes, fontsize=12, ha='center', va='top', fontweight='bold', color='black' if not plot_bg=='black' else 'white')
+        axes[i].text(0.5, -0.03, reg_plot_labels[i], transform=axes[i].transAxes, fontsize=7, ha='center', va='top', fontweight='bold', color='black' if not plot_bg=='black' else 'white')
 
     mappables = []
     j = 2
@@ -88,14 +91,14 @@ def make_figure(reg_ds_mpi, only_pi=False, plot_season='', plot_bg='white', weak
             axes[3*j+i].text(
                 0.5, -0.03, functions.ssp_labels[ssp],
                 transform=axes[3*j+i].transAxes,
-                fontsize=12, ha='center', va='top', color=functions.hosing_colors[ssp]['ge'], fontweight='bold'
+                fontsize=7, ha='center', va='top', color='black' if not plot_bg=='black' else 'white', fontweight='bold'
             )
         j+=1
 
     row_labels = ["Cooling sensitivities: local cooling as a function of additional AMOC weakening",
                   "",
                   f"Net-cooling AMOC weakening w.r.t. annual mean present-day temperatures ({functions.PD_LABEL})" if plot_season==''else f"Net-cooling AMOC weakening w.r.t. {plot_season.upper()} mean present-day temperatures ({functions.PD_LABEL})",
-                  "Net-cooling AMOC weakening w.r.t. annual mean preindustrial temperatures (1850-1899)" if plot_season==''else f"Net-cooling AMOC weakening w.r.t. {plot_season.upper()} mean preindustrial temperatures (1850-1899)",
+                  "Net-cooling AMOC weakening w.r.t. annual mean preindustrial temperatures (1850–1899)" if plot_season==''else f"Net-cooling AMOC weakening w.r.t. {plot_season.upper()} mean preindustrial temperatures (1850–1899)",
                   ]
 
     cbar_width = 0.02
@@ -108,7 +111,7 @@ def make_figure(reg_ds_mpi, only_pi=False, plot_season='', plot_bg='white', weak
         _range_last = 4.9 if only_pi else 5.3
         _bar_ax_w = 0.8 if only_pi else 1.0
         ssp370_right = _cbar_x_tmp + (_range_last + _bar_ax_w) * cbar_width
-        line_height_x = 12 / 72 / fig.get_figwidth()
+        line_height_x = 7 / 72 / fig.get_figwidth()
         shift = ssp370_right - axes[2].get_position().x1 - line_height_x
         for ax in [axes[0], axes[1], axes[2]]:
             pos = ax.get_position()
@@ -120,15 +123,15 @@ def make_figure(reg_ds_mpi, only_pi=False, plot_season='', plot_bg='white', weak
         row_left = orig_top_left + shift if (cbar1_left and i == 0) else orig_top_left
         if only_pi and i == 3:
             row_top = axes[(i-1)*ncols].get_position().y1
-            fig.text(row_left, row_top+0.03, row_labels[i], va='center', ha='left', fontsize=12, fontweight='bold', color='black' if not plot_bg=='black' else 'white')
+            fig.text(row_left, row_top+0.03, row_labels[i], va='center', ha='left', fontsize=7, fontweight='bold', color='black' if not plot_bg=='black' else 'white')
             continue
         row_top = axes[i*ncols].get_position().y1
-        fig.text(row_left, row_top+ (0.03 if only_pi else 0.01), row_labels[i], va='center', ha='left', fontsize=12, fontweight='bold', color='black' if not plot_bg=='black' else 'white')
+        fig.text(row_left, row_top+ (0.03 if only_pi else 0.01), row_labels[i], va='center', ha='left', fontsize=7, fontweight='bold', color='black' if not plot_bg=='black' else 'white')
 
     for ax, label in zip(panel_axes, panel_labels):
         left = ax.get_position().x0
         top = ax.get_position().y1
-        fig.text(left + 0.015, top-0.018, label, transform=fig.transFigure, fontsize=14, ha='right', va='center', fontweight='bold', color='black' if not plot_bg=='black' else 'white')
+        fig.text(left + 0.015, top-0.018, label, transform=fig.transFigure, fontsize=8, ha='right', va='center', fontweight='bold', color='black' if not plot_bg=='black' else 'white')
 
     right = axes[-1].get_position().x1
     # weakening_only drops the left-hand Sv secondary axis, so the bar can sit
@@ -148,8 +151,8 @@ def make_figure(reg_ds_mpi, only_pi=False, plot_season='', plot_bg='white', weak
 
     cbar1 = fig.colorbar(reg_mappables[2], cax=cax1, orientation='vertical')
 
-    cbar1.ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x:.1f}°C"))
-    cbar1.set_label('Cooling per 10% additional\nAMOC weakening', fontsize=12, labelpad=5, loc='center', color='black' if not plot_bg=='black' else 'white')
+    cbar1.ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x:.1f} °C"))
+    cbar1.set_label('Cooling per 10% additional\nAMOC weakening', fontsize=7, labelpad=3, loc='center', color='black' if not plot_bg=='black' else 'white')
     if cbar1_left:
         cbar1.ax.yaxis.set_ticks_position('left')
         cbar1.ax.yaxis.set_label_position('left')
@@ -163,20 +166,20 @@ def make_figure(reg_ds_mpi, only_pi=False, plot_season='', plot_bg='white', weak
         cbar2.ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x:.0f}%"))
         cbar2.ax.yaxis.set_ticks_position('right')
         cbar2.ax.yaxis.set_label_position('right')
-        cbar2.set_label('AMOC\nweakening' if only_pi else 'AMOC weakening', fontsize=12, labelpad=5, loc='bottom', color=text_color)
+        cbar2.set_label('AMOC\nweakening' if only_pi else 'AMOC weakening', fontsize=7, labelpad=3, loc='bottom', color=text_color)
         if not weakening_only:
             secax = cbar2.ax.secondary_yaxis('left', functions=(functions.convert_weakening_to_strength, functions.convert_strength_to_weakening))
-            secax.set_ylabel('AMOC strength', fontsize=12, labelpad=0, loc='bottom', color=text_color)
+            secax.set_ylabel('AMOC strength', fontsize=7, labelpad=0, loc='bottom', color=text_color)
             secax.set_yticks(list(range(0, 19, 2)))
             secax.set_yticklabels([f'{s} Sv' for s in range(0, 19, 2)])
     else:
-        cbar2.set_label('AMOC strength', fontsize=12, labelpad=0, loc='bottom', color=text_color)
+        cbar2.set_label('AMOC strength', fontsize=7, labelpad=0, loc='bottom', color=text_color)
         cbar2.ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x:.0f} Sv"))
         cbar2.ax.yaxis.set_label_position('left')
         cbar2.ax.yaxis.set_ticks_position('left')
         if not weakening_only:
             secax = cbar2.ax.secondary_yaxis('right', functions=(functions.convert_strength_to_weakening, functions.convert_weakening_to_strength))
-            secax.set_ylabel('AMOC weakening', fontsize=12, labelpad=5, loc='bottom', color=text_color)
+            secax.set_ylabel('AMOC weakening', fontsize=7, labelpad=3, loc='bottom', color=text_color)
             secax.set_yticks([10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
             secax.set_yticklabels(['10%', '20%', '30%', '40%', '50%', '60%', '70%', '80%', '90%', '100%'])
 
@@ -214,7 +217,7 @@ def make_figure(reg_ds_mpi, only_pi=False, plot_season='', plot_bg='white', weak
         cbar2.ax.plot(
             [range_positions[i] - 0.08, range_positions[i] + (0.88 if only_pi else 1.08)], [mpi_y, mpi_y],
             color=line_color,
-            linewidth=2, transform=cbar2.ax.transAxes, clip_on=False, zorder=11
+            linewidth=1, transform=cbar2.ax.transAxes, clip_on=False, zorder=11
         )
 
         bar_text = f"{functions.ssp_labels[ssp]}" if only_pi else f"{functions.ssp_labels[ssp]} 2100 CMIP6 range"
@@ -227,7 +230,7 @@ def make_figure(reg_ds_mpi, only_pi=False, plot_season='', plot_bg='white', weak
             text_y,
             bar_text,
             color='white',
-            fontsize=9,
+            fontsize=6,
             rotation=90,
             va='center',
             ha='center',
@@ -256,6 +259,7 @@ def make_figure(reg_ds_mpi, only_pi=False, plot_season='', plot_bg='white', weak
                                          transform=fig.transFigure, color=border_color, zorder=1000, clip_on=False))
 
     savepath = f"../plots/Fig2_onlypi-{only_pi}_plotbg-{plot_bg}_season-{plot_season or 'annual'}_weakprim-{weakening_primary}_cmiprange-{show_cmip_range_contours}_weakonly-{weakening_only}_cbar1left-{cbar1_left}{functions.fw_suffix(future_window)}"
+    functions.fit_print_width(fig)
     fig.savefig(savepath + '.png', bbox_inches='tight', transparent=True if plot_bg=='black' else False, dpi=200)
     fig.savefig(savepath + '.pdf', bbox_inches='tight', dpi=400, transparent=True if plot_bg=='black' else False)
 

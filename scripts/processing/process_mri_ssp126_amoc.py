@@ -38,6 +38,7 @@ import hashlib
 
 import numpy as np
 import xarray as xr
+CFTIME = xr.coders.CFDatetimeCoder(use_cftime=True)  # xarray >= 2025.1: the use_cftime kwarg is deprecated
 
 
 SSP = "ssp126"
@@ -84,7 +85,7 @@ def derive_amoc26_yr(msftmz_path):
     """msftmz at gr2z → basin=0 (atlantic_arctic_ocean), lat=26.5 nearest →
     days-in-month-weighted annual mean → idxmax over lev → /(1025*1e6).
     Returns DataArray on (time,) with a 'lev' time-varying coord."""
-    ds = xr.open_dataset(msftmz_path, use_cftime=True)
+    ds = xr.open_dataset(msftmz_path, decode_times=CFTIME)
     msftmz_sub = ds.sel(basin=0, drop=True).sel(lat=26.5, method="nearest", drop=True)
     amoc_yr = weighted_mon_to_year_mean(msftmz_sub, "msftmz")
     max_lev_idx = amoc_yr.idxmax(dim="lev")
@@ -117,7 +118,7 @@ if __name__ == "__main__":
     print()
     print("=== Gate B: derive r1 from /pool, compare to legacy uo1075 cache ===")
     new_r1_pool = derive_amoc26_yr(POOL_R1)
-    legacy = xr.open_dataarray(LEGACY_R1, use_cftime=True)
+    legacy = xr.open_dataarray(LEGACY_R1, decode_times=CFTIME)
     new_aligned = new_r1_pool.assign_coords(time=legacy.time)
     diff_B = float(np.abs(legacy.values - new_aligned.values).max())
     print(f"  n_time legacy={legacy.size}  new={new_r1_pool.size}")
@@ -134,7 +135,7 @@ if __name__ == "__main__":
     print()
     print("=== Gate C: derive r1 from ESGF chunk, compare to legacy ===")
     new_r1_esgf = derive_amoc26_yr(_esgf_chunk_path("r1i1p1f1"))
-    legacy = xr.open_dataarray(LEGACY_R1, use_cftime=True)
+    legacy = xr.open_dataarray(LEGACY_R1, decode_times=CFTIME)
     new_aligned = new_r1_esgf.assign_coords(time=legacy.time)
     diff_C = float(np.abs(legacy.values - new_aligned.values).max())
     print(f"  legacy mean         = {float(legacy.mean()):.6f} Sv")
@@ -178,11 +179,11 @@ if __name__ == "__main__":
     colors = cm.viridis(np.linspace(0.1, 0.9, len(MEMBERS_ALL)))
     for c, m in zip(colors, MEMBERS_ALL):
         if m == "r1i1p1f1":
-            da = xr.open_dataarray(LEGACY_R1, use_cftime=True)
+            da = xr.open_dataarray(LEGACY_R1, decode_times=CFTIME)
             tag = " (legacy uo1075)"
         else:
             da = xr.open_dataarray(f"{OUT_DIR}/mri-esm2-0_{m}_amoc26_yr.nc",
-                                   use_cftime=True)
+                                   decode_times=CFTIME)
             tag = " (ESGF v20210910)"
         try:
             years = da.time.dt.year.values

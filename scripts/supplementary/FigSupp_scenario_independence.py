@@ -118,16 +118,16 @@ def _build_state_observations(data_dict, multi_model_dict, season='', var='tas',
             mask_l = mask_l.sel(lat=tpi_field.lat, lon=tpi_field.lon, method='nearest')
         tas_pi_value = float(functions.weighted_area_lat(
                                 tpi_field.where(mask_r).where(mask_l == 0))
-                             .mean('lat').mean('lon').values)
+                             .mean(('lat', 'lon')).values)
 
     if amoc_pi_denom is None:
         amoc_pi_denom = amoc_pi_value
 
     # ---------- SSP arm ----------
     ssp_amoc_yr    = data_dict['']['amoc']['ssp']
-    ssphos_amoc_yr = data_dict['']['amoc']['ssphos'].isel(time=slice(0, -198))
+    ssphos_amoc_yr = data_dict['']['amoc']['ssphos'].sel(time=slice(None, '2100'))
     ssp_var        = data_dict[season][var]['ssp']
-    ssphos_var     = data_dict[season][var]['ssphos'].isel(time=slice(0, -198))
+    ssphos_var     = data_dict[season][var]['ssphos'].sel(time=slice(None, '2100'))
     masks_eur_dict = data_dict['masks']
     mask_land      = data_dict['masks']['LAND']
 
@@ -163,13 +163,13 @@ def _build_state_observations(data_dict, multi_model_dict, season='', var='tas',
                 y = (functions.weighted_area_lat(
                         ssphos_var.sel(scenar=ssp_i, hosing=exp)
                         .where(masks_eur_dict[region]).where(mask_land == 0)
-                     ).mean('lat').mean('lon')
+                     ).mean(('lat', 'lon'))
                      .rolling(time=window, center=True).mean('time')
                      .mean(dim='realiz')[var].values
                      - functions.weighted_area_lat(
                         ssp_var.sel(scenar=ssp_i)
                         .where(masks_eur_dict[region]).where(mask_land == 0)
-                     ).mean('lat').mean('lon')
+                     ).mean(('lat', 'lon'))
                      .rolling(time=window, center=True).mean('time')
                      .mean(dim='realiz')[var].values)
 
@@ -202,7 +202,7 @@ def _build_state_observations(data_dict, multi_model_dict, season='', var='tas',
         tas_pi_h_field = mpi.sel(type='hosing', scenar='pi', season=season).tas
         tas_pi_h = (functions.weighted_area_lat(
                         tas_pi_h_field.where(mask_r).where(mask_l == 0))
-                    .mean('lat').mean('lon')
+                    .mean(('lat', 'lon'))
                     .rolling(time=window, center=True).mean('time').values)
 
     x_pi_sv = np.asarray(amoc_pi_h, dtype=float) - amoc_pi_value
@@ -262,7 +262,7 @@ def _plot_state_dep_scatter(ax, x_pct, y, exp_id, state_name, diag,
         sel = state_name == s
         if not np.any(sel):
             continue
-        ax.scatter(x_pct[sel], y[sel], s=18, alpha=0.55,
+        ax.scatter(x_pct[sel], y[sel], s=6.5, alpha=0.55,
                    c=[state_colors[s]], linewidths=0, clip_on=False)
         if s == 'pi':
             m = sm.OLS(y[sel], sm.add_constant(x_pct[sel])).fit(
@@ -276,7 +276,7 @@ def _plot_state_dep_scatter(ax, x_pct, y, exp_id, state_name, diag,
             t_crit = scipy_stats.t.ppf(0.975, df=G - 1)
         yhat = m.predict(X_range)
         pred_se = m.get_prediction(X_range).se
-        ax.plot(x_range, yhat, color=state_colors[s], lw=1.4, alpha=0.95)
+        ax.plot(x_range, yhat, color=state_colors[s], lw=0.85, alpha=0.95)
         ax.fill_between(x_range, yhat - t_crit * pred_se,
                         yhat + t_crit * pred_se,
                         color=state_colors[s], alpha=0.18, linewidth=0)
@@ -286,17 +286,17 @@ def _plot_state_dep_scatter(ax, x_pct, y, exp_id, state_name, diag,
     t_crit_p = scipy_stats.t.ppf(0.975, df=len(set(exp_id)) - 1)
     yhat_p = pooled.predict(X_range)
     pred_se_p = pooled.get_prediction(X_range).se
-    ax.plot(x_range, yhat_p, color=fg, lw=1.8)
+    ax.plot(x_range, yhat_p, color=fg, lw=1)
     ax.fill_between(x_range, yhat_p - t_crit_p * pred_se_p,
                     yhat_p + t_crit_p * pred_se_p,
                     color=fg, alpha=0.18, linewidth=0)
 
-    ax.axhline(0, color=fg, lw=1.0, linestyle='--', alpha=0.5)
-    ax.axvline(0, color=fg, lw=1.0, linestyle='--', alpha=0.5)
+    ax.axhline(0, color=fg, lw=0.54, linestyle='--', alpha=0.5)
+    ax.axvline(0, color=fg, lw=0.54, linestyle='--', alpha=0.5)
     # Weaker-AMOC on the right, matching Fig1 panel c (x_pct>0 = weakening; no invert).
     ax.set_xlim(xlim); ax.set_ylim(ylim)
-    ax.set_xlabel('AMOC weakening [%]')
-    ax.set_ylabel(r'Deviation from MPI-GE $\Delta T$ [°C]')
+    ax.set_xlabel('AMOC weakening (%)')
+    ax.set_ylabel('Deviation from MPI-GE ΔT (°C)')
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
@@ -453,11 +453,12 @@ if __name__ == '__main__':
 # dict caches the answer so the default render path doesn't pay the 1–2 min
 # scan cost per season. Regenerate (and update this dict) if anything
 # upstream changes: data, AMOC reference, scenario list, mask topology, the
-# regression specification. Last derived 2026-05-28.
+# regression specification. Last derived 2026-10-09 (joint lat-lon area mean); annual: no country rejects at 5%,
+# the scan falls back to the smallest p (NO was 0.0277 before that change).
 _MOST_REJECTING_COUNTRY_BY_SEASON = {
-    '':    'NO',   # Norway,  Wald-p = 0.0277 (annual)
+    '':    'DK',   # Denmark, Wald-p = 0.0559 (annual)
     'djf': 'AT',   # Austria, Wald-p = 0.0055
-    'jja': 'NO',   # Norway,  Wald-p = 0.0006
+    'jja': 'NO',   # Norway,  Wald-p = 1.7e-6
 }
 
 # Parallel hardcoded dict for the state-dependence (PI + 3 SSPs) test.
@@ -468,7 +469,7 @@ _MOST_REJECTING_COUNTRY_BY_SEASON = {
 _MOST_REJECTING_COUNTRY_BY_SEASON_STATE = {
     '':    'GB',   # Great Britain, Wald-p ≈ 0 (annual)
     'djf': 'IE',   # Ireland,       Wald-p ≈ 0
-    'jja': 'IS',   # Iceland,       Wald-p ≈ 0
+    'jja': 'GB',   # Great Britain, Wald-p ≈ 0 (re-derived 2026-10-09)
 }
 
 # Module-level memoization for the recompute path — the (var, season, alpha)
@@ -601,23 +602,23 @@ def _annotate_wald(ax, lc, fg, bg, slope_units='K/Sv', per_state_betas=None):
     if 'wald_pvalue' not in lc or not np.isfinite(lc.get('wald_pvalue', np.nan)):
         return
     annot = (
-        f'Wald-F p          = {lc["wald_pvalue"]:.3f}\n'
-        f'partial R²_indep  = {lc["partial_r2_indep"]:.4f}\n'
-        f'ΔR²_total_indep   = {lc["delta_r2_total_indep"]:.5f}\n'
-        f'max |Δβ|          = {lc["max_pairwise_slope_diff"]:.3f} {slope_units}'
+        f'Wald-F p = {lc["wald_pvalue"]:.3f}\n'
+        f'partial R² = {lc["partial_r2_indep"]:.4f}\n'
+        rf'$\Delta\mathrm{{R}}^2_\mathrm{{total}}$ = {lc["delta_r2_total_indep"]:.5f}' '\n'
+        f'max |Δβ| = {lc["max_pairwise_slope_diff"]:.3f} {slope_units}'
     )
     if per_state_betas:
         lines = []
         for s in _STATES:
             if s in per_state_betas and np.isfinite(per_state_betas[s]):
-                lines.append(f'β_{s:<6} = {per_state_betas[s]:+.4f} {slope_units}')
+                lines.append(f'β_{s} = {per_state_betas[s]:+.4f} {slope_units}'.replace('-', '−'))
         if lines:
             annot += '\n' + '\n'.join(lines)
     ax.text(
         0.97, 0.97, annot,
-        transform=ax.transAxes, fontsize=8,
-        va='top', ha='right', ma='left', family='monospace',
-        bbox=dict(facecolor=bg, edgecolor=fg, alpha=0.85,
+        transform=ax.transAxes, fontsize=5,
+        va='top', ha='right', ma='left',
+        bbox=dict(facecolor=bg, edgecolor=fg, alpha=0.85, linewidth=0.4,
                   boxstyle='round,pad=0.4'),
     )
 
@@ -650,7 +651,7 @@ def make_figure(data_dict, si_ds, var='tas', region='EU', season='',
         hosmip_reg_ds_dict = functions.get_hosmip_reg_ds(recompute=False)
 
     plt.style.use('default')
-    plt.rcParams.update({'font.size': 12})
+    plt.rcParams.update(functions.PRINT_RC)
     if plot_bg == 'black':
         plt.style.use('dark_background')
         plt.rcParams['axes.facecolor'] = '#191919'
@@ -659,7 +660,9 @@ def make_figure(data_dict, si_ds, var='tas', region='EU', season='',
     fg = 'black' if plot_bg != 'black' else 'white'
     bg = 'white' if plot_bg != 'black' else '#191919'
 
-    fig = plt.figure(figsize=(14, 12))
+    sc = 0.604  # print scale: old crop 303 mm → 183 mm (fit_print_width sets the exact canvas)
+    fig = plt.figure(figsize=(14 * sc, 12 * sc))
+    fig.set_size_inches(14 * sc, 12 * sc, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
     gs = fig.add_gridspec(
         2, 2,
         height_ratios=[1.0, 1.0], width_ratios=[1.0, 1.0],
@@ -698,17 +701,17 @@ def make_figure(data_dict, si_ds, var='tas', region='EU', season='',
         norm = mcolors.BoundaryNorm(bounds, cmap.N, clip=False)
 
         ax.spines['geo'].set_visible(False)
-        ax.set_rasterized(True)
-        ax.coastlines(color=fg, linewidth=0.5, zorder=3)
-        ax.add_feature(cfeature.BORDERS, edgecolor=fg, linewidth=0.5)
+        ax.coastlines(color=fg, linewidth=0.3, zorder=3)
+        ax.add_feature(cfeature.BORDERS, edgecolor=fg, linewidth=0.3)
         ax.add_feature(cfeature.OCEAN, facecolor=bg, zorder=2)
         pcm = ax.pcolormesh(
             lons, lats, field,
             cmap=cmap, norm=norm, transform=ccrs.PlateCarree(), shading='auto',
         )
+        functions.rasterize_map(ax, pcm)
         ax.scatter(
             stipple_lon, stipple_lat,
-            s=4.5, c=fg, marker='.', linewidths=0, alpha=0.85,
+            s=1.6, c=fg, marker='.', linewidths=0, alpha=0.85,
             transform=ccrs.PlateCarree(), zorder=4,
         )
         ax.set_extent([-18.5, 38.5, 34.8, 72], crs=ccrs.PlateCarree())
@@ -716,26 +719,18 @@ def make_figure(data_dict, si_ds, var='tas', region='EU', season='',
         functions.add_square(ax, -30, -18, 68, 75, colour=bg)
         cbar = fig.colorbar(pcm, ax=ax, orientation='horizontal',
                             pad=0.05, aspect=30, extend='max', ticks=bounds)
-        cbar.set_label(label, fontsize=10)
+        cbar.set_label(label)
         return cbar
 
     slope_kind = 'per-state' if state_dependence else 'per-SSP'
-    _draw_map(ax_a, partial_r2, vmin=0.0, vmax=0.25, n_bins=5,
+    cbar_a = _draw_map(ax_a, partial_r2, vmin=0.0, vmax=0.25, n_bins=5,
               label=f"partial R² ({slope_kind} slopes' share of residuals)")
     _draw_map(ax_b, delta_r2, vmin=0.0, vmax=0.05, n_bins=5,
-              label=f"ΔR²_total ({slope_kind} slopes' share of total variance)")
+              label=rf"$\Delta\mathrm{{R}}^2_\mathrm{{total}}$ ({slope_kind} slopes' share of total variance)")
 
     season_suffix = f' ({season.upper()})' if season else ''
     contrib_label = 'State' if state_dependence else 'Scenario'
-    ax_a.set_title(f'a) {contrib_label} contribution to residuals{season_suffix}', fontsize=12, loc='left')
-    ax_b.set_title(f'b) {contrib_label} contribution to total variance{season_suffix}', fontsize=12, loc='left')
 
-    stipple_label = 'state-independence' if state_dependence else 'scenario-independence'
-    fig.text(
-        0.5, 0.91,
-        f'Stippling: Wald F-test rejects {stipple_label} at 5%.',
-        fontsize=10, ha='center', style='italic', color=fg,
-    )
 
     # ------------------------------------------------------------------
     # BOTTOM-LEFT (c): region-mean pooled regression — non-rejecting anchor
@@ -755,15 +750,14 @@ def make_figure(data_dict, si_ds, var='tas', region='EU', season='',
             data_dict, region=region, var=var, season=season,
             no_plots=False, compute_scenario_independence=True,
             ext_ax=ax_c, plot_bg=plot_bg, ylim=(-2.5, 1.5),
-            equation_y_pos=0.25,  # equations bottom-left; Wald box top-right
+            equation_y_pos=0.25, eqs_x=0.47,  # equations bottom-right, right of the 0 line and below the data; Wald box top-right
         )
         lc_eu = functions.regression_plot.last_call
         # Mirror Fig1.py panel c: weakening-% ruler, drop the orphaned top Sv axis.
         functions.add_weakening_pct_overlay(fig, ax_c, plot_bg=plot_bg, drop_parent_xaxis=True)
         _annotate_wald(ax_c, lc_eu, fg, bg)
     anchor_label = 'anchor' if state_dependence else 'non-rejecting case'
-    ax_c.set_title(f'c) {region}-mean ({anchor_label})',
-                   fontsize=12, loc='left')
+
 
     # ------------------------------------------------------------------
     # BOTTOM-RIGHT (d): most-rejecting country regression
@@ -825,7 +819,7 @@ def make_figure(data_dict, si_ds, var='tas', region='EU', season='',
                 data_dict, region=sel['label'], var=var, season=season,
                 no_plots=False, compute_scenario_independence=True,
                 ext_ax=ax_d, plot_bg=plot_bg, ylim=(-3.5, 2.0),
-                equation_y_pos=0.25,  # equations bottom-left; Wald box top-right
+                equation_y_pos=0.25, eqs_x=0.47,  # equations bottom-right, right of the 0 line and below the data; Wald box top-right
             )
             title_tag = sel['label']
         elif sel['kind'] == 'pixel':
@@ -834,7 +828,7 @@ def make_figure(data_dict, si_ds, var='tas', region='EU', season='',
                 data_dict, lat=lat_i, lon=lon_i, var=var, season=season,
                 no_plots=False, compute_scenario_independence=True,
                 ext_ax=ax_d, plot_bg=plot_bg, ylim=(-4.0, 2.5),
-                equation_y_pos=0.25,  # equations bottom-left; Wald box top-right
+                equation_y_pos=0.25, eqs_x=0.47,  # equations bottom-right, right of the 0 line and below the data; Wald box top-right
             )
             title_tag = sel['label']
         else:
@@ -850,8 +844,17 @@ def make_figure(data_dict, si_ds, var='tas', region='EU', season='',
             # Mirror Fig1.py panel c: weakening-% ruler, drop the orphaned top Sv axis.
             functions.add_weakening_pct_overlay(fig, ax_d, plot_bg=plot_bg, drop_parent_xaxis=True)
             _annotate_wald(ax_d, lc_rej, fg, bg)
-    ax_d.set_title(f'd) {title_tag} (rejecting case)',
-                   fontsize=12, loc='left')
+    functions.panel_headers(fig, [ax_a, ax_b], [f'{contrib_label} contribution to residuals{season_suffix}',
+                                                f'{contrib_label} contribution to total variance{season_suffix}'])
+    p_d = ((diag_d or {}) if state_dependence else (lc_rej if sel['kind'] != 'none' else {})).get('wald_pvalue', 0)
+    dy_c = functions.panel_headers(fig, [ax_c, ax_d], [f'{region}-mean ({anchor_label})', f'{title_tag} (rejecting case)' if p_d <= 0.05 else f'{title_tag} (lowest Wald-F p)'], letters='cd')
+    # stippling key centred in the band between the colourbar labels and the panel c/d headers
+    stipple_label = 'state-independence' if state_dependence else 'scenario-independence'
+    fig.draw_without_rendering()
+    y_key = (cbar_a.ax.get_tightbbox().y0 + ax_c.bbox.y1 + (dy_c + 6) * fig.dpi / 72) / 2 / fig.bbox.height  # header c cap height ~6 pt
+    fig.legend([plt.Line2D([], [], marker='.', color=fg, linestyle='None', markersize=2.5)],
+               [f'Stippling: Wald F-test rejects {stipple_label} at 5%'], loc='center', bbox_to_anchor=(0.5, y_key),
+               frameon=False, fontsize=6, handletextpad=0.2, borderpad=0, borderaxespad=0)
 
     # ------------------------------------------------------------------
     # SAVE
@@ -863,9 +866,10 @@ def make_figure(data_dict, si_ds, var='tas', region='EU', season='',
     savepath = (f"../plots/FigSupp_mpi_{analysis}{pi_tag}"
                 f"_var-{var}_region-{region}"
                 f"_season-{season or 'annual'}_plotbg-{plot_bg}")
-    fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight',
+    functions.fit_print_width(fig)
+    fig.savefig(savepath + '.png', dpi=300, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
-    fig.savefig(savepath + '.pdf', dpi=400, bbox_inches='tight',
+    fig.savefig(savepath + '.pdf', dpi=600, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
     return fig, savepath
 

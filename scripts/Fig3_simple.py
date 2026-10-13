@@ -8,10 +8,10 @@ from matplotlib.lines import Line2D
 from matplotlib.gridspec import GridSpec
 from matplotlib import ticker
 from matplotlib.transforms import Bbox, TransformedBbox
-plt.rcParams.update({'font.size': 12})
 import numpy as np
 
 import importlib
+import json
 import functions
 importlib.reload(functions)
 import cmip_cooling  # type: ignore
@@ -43,11 +43,13 @@ if __name__ == '__main__':
     cmip_range_calset = 'hosing'      # 'hosing' (default)|'full'|'nocesm2'|'consistentssp'
     cmip_range_predictors = 'w'       # 'w' (default) | 'wt'
     cmip_range_season = ''            # '' | 'djf' | 'jja'; must match the RUN cell's season
+    cmip_range_T_ref = 'pi'           # 'pi' | 'pd'; must match the RUN cell's T_ref
     cmip_range_ds = ssf.get_cmip_range_ds(recompute=False,
                                           state_dep=cmip_range_statedep,
                                           cal_set=cmip_range_calset,
                                           predictors=cmip_range_predictors,
-                                          season=cmip_range_season)
+                                          season=cmip_range_season,
+                                          T_ref=cmip_range_T_ref)
 
 
 ########################################
@@ -63,8 +65,8 @@ REG_LINE_ROWS = [
 ]
 
 
-def restyle_regression_line(ax, target_color, *, linestyle='-', zorder=10, lw=3):
-    """Find the lw-3 line of target_color drawn by hosmip_regression_plot and
+def restyle_regression_line(ax, target_color, *, linestyle='-', zorder=10, lw=1):
+    """Find the lw-1 line of target_color drawn by hosmip_regression_plot and
     bump its zorder / set its linestyle. Used to surface the brown 'this study'
     line that otherwise hides behind the violet NAHosMIP line."""
     tgt = mcolors.to_rgba(target_color)
@@ -85,14 +87,13 @@ def _set_marker_clip_to_spines(ax, *, left=-0.02, top=1.05):
     get half-cut. Lines are left alone — only marker collections are touched.
     Collections drawn with clip_on=False upstream (e.g. the raw HosMIP
     scatter in hosmip_regression_plot, which deliberately lets its point
-    cloud bleed past the axes) are skipped rather than newly clipped —
-    otherwise points beyond cap_x_range/low_ylim get hard-cut at this box's
-    right/bottom edge instead of fading unclipped past them."""
+    cloud bleed past the axes) are cut only at the left and top spines, so
+    they still run past cap_x_range/low_ylim but stay off the tick labels."""
     clip_box = TransformedBbox(Bbox([[left, 0.0], [1.0, top]]), ax.transAxes)
+    # unclipped collections keep bleeding right and down, but stop at the spines
+    open_box = TransformedBbox(Bbox([[left, -0.5], [1.1, top]]), ax.transAxes)
     for coll in ax.collections:
-        if not coll.get_clip_on():
-            continue
-        coll.set_clip_box(clip_box)
+        coll.set_clip_box(clip_box if coll.get_clip_on() else open_box)
         coll.set_clip_on(True)
 
 
@@ -109,18 +110,26 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
                 cmip_range_ds=None, cmip_range_show=True, cmip_range_mode='medians',
                 cmip_range_statedep='pooled', cmip_range_calset='hosing',
                 cmip_range_predictors='w', nahosmip_overlay=False,
-                vwb_data=True):
+                vwb_data=True, vwb_window=None, cmip_members=False, likely_range=False):
 
     plt.style.use('default')
+    plt.rcParams.update({**functions.PRINT_RC, 'font.size': 6})  # 6 pt base: panel b rows are 7.9 pt apart
     # F9 (2026-08-31): the filename tags must describe the dataset actually
     # drawn — trust nothing the caller says without checking the attrs.
+    if cmip_range_show and cmip_range_ds is None:
+        raise ValueError("cmip_range_show=True but cmip_range_ds is None; pass the "
+                         "range ds or set cmip_range_show=False explicitly")
     if cmip_range_ds is not None and cmip_range_show:
-        for _attr, _want in (('state_dep', cmip_range_statedep),
-                             ('cal_set', cmip_range_calset),
-                             ('predictors', cmip_range_predictors)):
-            assert cmip_range_ds.attrs.get(_attr) == _want, (
-                f"cmip_range_ds has {_attr}={cmip_range_ds.attrs.get(_attr)!r} "
-                f"but the tag kwargs say {_want!r}")
+        _fw = future_window or functions.FUTURE_WINDOW
+        for _attr, _want, _dflt in (('state_dep', cmip_range_statedep, None),
+                                    ('cal_set', cmip_range_calset, None),
+                                    ('predictors', cmip_range_predictors, None),
+                                    ('T_ref', T_ref, 'pi'),
+                                    ('future_window', f'{_fw[0]}-{_fw[1]}', None)):
+            assert cmip_range_ds.attrs.get(_attr, _dflt) == _want, (
+                f"cmip_range_ds has {_attr}={cmip_range_ds.attrs.get(_attr, _dflt)!r} "
+                f"but the figure kwargs say {_want!r}")
+    _vwbw = vwb_window or next(iter(functions.VWB_GHG_WINDOWS))
     sv_xmax_e = sv_xmax_ad = None
     if weakening_unit == 'sv':
         pis = [float(ds.AMOC_pi.values) for ds in hosmip_reg_ds_dict.values()]
@@ -136,12 +145,13 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
         plt.rcParams['axes.facecolor'] = '#191919'
         plt.rcParams['figure.facecolor'] = '#191919'
 
-    # Figsize: width matches Fig3 (16 in), but height shrinks by 35/42 = 5/6
-    # so each grey row in panel b has the same line height it had before
-    # dropping the 7 sub-30k-km² countries (LU, CY, XK, ME, SI, MK, AL).
-    # Original Fig3 had 41 countries + EU = 42 rows in 14 in. Now 34 + EU = 35
-    # rows; same per-row height implies 14 × 35/42 = 11.667 in tall.
-    fig = plt.figure(figsize=(16, 14 * 35 / 42))
+    # Figsize: the height is Fig3's aspect (16 × 14 in) at 183 mm width, × 35/42, so each
+    # grey row in panel b keeps the line height it had before dropping the 7 sub-30k-km²
+    # countries (41 + EU = 42 rows → 34 + EU = 35). The canvas is wider than 183 mm so the
+    # figure is 183 mm after the tight crop.
+    canvas_w = 196.8
+    fig = plt.figure(figsize=(canvas_w/25.4, 183/25.4 * 35/48))
+    fig.set_size_inches(canvas_w/25.4, 183/25.4 * 35/48, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
     gs = GridSpec(2, 2, width_ratios=[0.35, 0.65], height_ratios=[1.0, 1.0],
                   wspace=0.4, hspace=0.04)
     ax_left   = fig.add_subplot(gs[0, 0])
@@ -168,16 +178,15 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
         quantile_reg=False, no_plots=False, low_ylim=-8, linear_95_reg=True,
         linear_5_reg=False, central_reg=None, central_reg_intercept=False,
         hosmip_ref_pi=True, cap_x_range=100,
-        # vwb_data: off by default. Annual is fully measured (filled marker);
-        # DJF still estimates its (control, pi) corner and draws hollow + bracket.
-        bm_data=True, liu_data=True, vwb_data=vwb_data, boot_data=True, boot_regression=True,
+        # vwb_window: RCP4.5 window of the vwb ghg corners (None -> 2400-2500)
+        bm_data=True, liu_data=True, vwb_data=vwb_data, vwb_window=_vwbw, boot_data=True, boot_regression=True,
         giss_data=giss_panel_for_season,
         giss_regression=(giss_panel_for_season is not None),
         giss_intercept=False, giss_time_period=giss_time_period,
         add_combined_results=True, combined_results_label=False,
         add_hosmip_mpi_regression=True, hosmip_reg_ds_dict=hosmip_reg_ds_dict,
         weakening_unit=weakening_unit, sv_xmax=sv_xmax_ad,
-        ax=ax_left, markersize=14)
+        ax=ax_left, markersize=3.28)  # scatter area scale: 14 × (196.8 mm canvas / 16 in)²
 
     # X-axis on top, aligned visually with panel b's CMIP6 envelope strip.
     # Bottom spine + bottom xticks hidden so the panel reads as a single
@@ -243,13 +252,13 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
     _gw = giss_time_period.replace('-', '–')
     _study_rewrites = [
         ('Bellomo & Mehling\npreindustrial',
-         'Bellomo & Mehling (2024): preindustrial'),
+         'Bellomo & Mehling (2024):\npreindustrial'),
         ('Bellomo & Mehling\n4x',
-         'Bellomo & Mehling (2024): 4×CO₂'),
+         'Bellomo & Mehling (2024):\n4×CO$_2$'),
         ('v. Westen & Baatsen',
-         'van Westen & Baatsen (2025)\nRCP4.5 (2400–2500)'),
+         f"van Westen & Baatsen (2025)\nRCP4.5 ({_vwbw.replace('-', '–')})"),
         ('Liu et al.',
-         'Liu et al. (2020): RCP8.5 (2061–2080)'),
+         'Liu et al. (2020):\nRCP8.5 (2061–2080)'),
         ('Boot et al.',
          'Boot et al. (2024):\nSSP1-2.6 & SSP5-8.5 (2015–2100)'),
         ('Romanou et al.',
@@ -258,49 +267,53 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
     def _restyle_study_label(l):
         for prefix, new in _study_rewrites:
             if l.startswith(prefix):
-                # the rewrite replaces the whole label, so carry over the
-                # '(est.)' the plotter appends for a provisional marker
-                return new + (' (est.)' if l.endswith('(est.)') else '')
+                return new
         return l
     l_studies = [_restyle_study_label(l) for l in l_studies]
 
-    h_lines = [Line2D([], [], color=c, lw=3, linestyle=s) for c, s, _ in REG_LINE_ROWS]
+    h_lines = [Line2D([], [], color=c, lw=1, linestyle=s) for c, s, _ in REG_LINE_ROWS]
     l_lines = [t for _, _, t in REG_LINE_ROWS]
 
     leg_lines = ax_legend.legend(
-        h_lines, l_lines, frameon=False, fontsize=10, ncols=1,
+        h_lines, l_lines, frameon=False, fontsize=6, ncols=1,
         loc='upper left', bbox_to_anchor=(-0.02, 0.2),
         title='Regression lines',
-        title_fontproperties={'weight': 'bold', 'size': 11},
+        title_fontproperties={'weight': 'bold', 'size': 7},
         handlelength=2.6, handletextpad=0.7, labelspacing=0.55,
         borderaxespad=0.0)
-    for t, (c, _, _) in zip(leg_lines.get_texts(), REG_LINE_ROWS):
-        t.set_color(c); t.set_weight('bold')
+    leg_lines.set_in_layout(False)  # its pad box reaches below panel b; the panels, not the legend, set the lower crop edge
     leg_lines._legend_box.align = 'left'
-    ax_legend.add_artist(leg_lines)
+    ax_legend.add_artist(leg_lines).set_clip_on(False)
 
     leg_models = ax_legend.legend(
-        h_models, l_models, frameon=False, fontsize=10, ncols=1,
+        h_models, l_models, frameon=False, fontsize=6, ncols=1,
         loc='upper left', bbox_to_anchor=(-0.02, 0.9),
         title='NAHosMIP models',
-        title_fontproperties={'weight': 'bold', 'size': 11},
+        title_fontproperties={'weight': 'bold', 'size': 7},
         labelcolor=text_color, borderaxespad=0.0,
         handletextpad=0.5, labelspacing=0.35)
     leg_models._legend_box.align = 'left'
     ax_legend.add_artist(leg_models)
 
     leg_studies = ax_legend.legend(
-        h_studies, l_studies, frameon=False, fontsize=10, ncols=1,
-        loc='upper left', bbox_to_anchor=(0.4, 0.9),
+        h_studies, l_studies, frameon=False, fontsize=6, ncols=1,
+        loc='upper left', bbox_to_anchor=(0.42, 0.9),
         title='Other studies',
-        title_fontproperties={'weight': 'bold', 'size': 11},
+        title_fontproperties={'weight': 'bold', 'size': 7},
         labelcolor=text_color, borderaxespad=0.0,
-        handletextpad=0.5, labelspacing=0.35)
+        handletextpad=0.5, labelspacing=0.25)
     leg_studies._legend_box.align = 'left'
 
     # ── Panel b (right): net-cooling ranges ─────────────────────────────────
     cc_ds_for_plot = cmip_cooling_ds if cmip_cooling_show else None
     cr_ds_for_plot = cmip_range_ds if cmip_range_show else None
+    members = None
+    if cmip_members:  # per-model estimates behind the synthetic range (sidecar of the same cache)
+        assert cr_ds_for_plot is not None, 'cmip_members needs the synthetic range'
+        with open(ssf.range_cache_path(state_dep=cmip_range_statedep, cal_set=cmip_range_calset,
+                                       predictors=cmip_range_predictors, season=season,
+                                       future_window=future_window, T_ref=T_ref).replace('.nc', '_fit_stats.json')) as f:
+            members = {r: d['members'] for r, d in json.load(f).items()}
     functions.plot_net_cooling_ranges_mpi_cesm(
         reg_ds_mpi, reg_ds_cesm, masks,
         hosmip_reg_ds_dict=hosmip_reg_ds_dict, season=season,
@@ -309,9 +322,9 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
         reg_ds_giss=reg_ds_giss, giss_time_period=giss_time_period,
         cmip_cooling_ds=cc_ds_for_plot, cmip_cooling_decade=None,
         aggregate_first=aggregate_first, amoc_extent=_ext,
-        weakening_unit=weakening_unit, sv_xmax=sv_xmax_e, amoc_extent_y=1.04,
+        weakening_unit=weakening_unit, sv_xmax=sv_xmax_e, amoc_extent_y=1.05,
         cmip_range_ds=cr_ds_for_plot, cmip_range_mode=cmip_range_mode,
-        nahosmip_overlay=nahosmip_overlay)
+        nahosmip_overlay=nahosmip_overlay, cmip_members=members, likely_range=likely_range)
 
     # Right panel vertical alignment with the left column (mirrors Fig3.py:170–180)
     pos_left_top = ax_left.get_position()
@@ -362,6 +375,23 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
     ax_legend.set_position([pos_l_cur.x0, band_bot,
                             pos_l_cur.width, legend_h])
 
+    # Regression-lines legend sits 1 pt below the lower of the two legends above it.
+    _r = fig.canvas.get_renderer()
+    _y = min(l.get_window_extent(_r).y0 for l in (leg_models, leg_studies)) - 1 * fig.dpi / 72
+    leg_lines.set_bbox_to_anchor((-0.02, ax_legend.transAxes.inverted().transform((0, _y))[1]),
+                                 transform=ax_legend.transAxes)
+    # Panel b grows downwards (top fixed) until its x-label shares a baseline with that legend's last line.
+    for _ in range(10):
+        fig.draw_without_rendering()  # axis-label positions are only updated at draw time
+        _base = lambda t: t.get_window_extent(_r).y0 + _r.get_text_width_height_descent(t.get_text(), t.get_fontproperties(), ismath=False)[2]
+        _d = (_base(ax_right.xaxis.label) - _base(leg_lines.get_texts()[-1])) / fig.bbox.height
+        if abs(_d) <= 1e-4:
+            break
+        _p = ax_right.get_position()
+        ax_right.set_position([_p.x0, _p.y0 - _d, _p.width, _p.height + _d])
+    _a = leg_lines.get_bbox_to_anchor().transformed(ax_legend.transAxes.inverted())
+    leg_lines.set_bbox_to_anchor((-0.02, _a.y0 + 4.5 * fig.dpi / 72 / ax_legend.bbox.height), transform=ax_legend.transAxes)  # then up half a row (rows are 9 pt apart)
+
     # Subplot letters — 'a' stays at its current absolute fig-y position (the
     # top of the figure, aligned with panel b's CMIP6 envelope band). 'b'
     # lives at the same y.
@@ -369,10 +399,10 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
     pos_b = ax_right.get_position()
     label_y = ax_right_top + 0.5 * (overflow_frac * new_height_adjusted) + 0.012
     fig.text(pos_a.x0 - 0.015, label_y, 'a',
-             fontsize=16, fontweight='bold', ha='right', va='bottom',
+             fontsize=8, fontweight='bold', ha='right', va='bottom',
              color=text_color)
     fig.text(pos_b.x0, label_y, 'b',
-             fontsize=16, fontweight='bold', ha='right', va='bottom',
+             fontsize=8, fontweight='bold', ha='right', va='bottom',
              color=text_color)
 
     # Map-axes white-border patches (mirrors Fig3.py:185–200)
@@ -407,12 +437,15 @@ def make_figure(multi_model_dict, masks, reg_ds_mpi, reg_ds_cesm, hosmip_reg_ds_
                  if (cmip_range_ds is not None and cmip_range_show) else '_cr-off')
     hosov_tag = ('_hosov-on' if (nahosmip_overlay and cmip_range_ds is not None
                                  and cmip_range_show) else '')
-    vwb_tag   = '_vwb-on' if vwb_data else '_vwb-off'
+    mem_tag   = '_mem-on' if members is not None else ''
+    lik_tag   = '_lik-on' if likely_range else ''
+    vwb_tag   = (f'_vwb-{_vwbw}' if _vwbw != next(iter(functions.VWB_GHG_WINDOWS)) else '_vwb-on') if vwb_data else '_vwb-off'
     savepath = (f"../plots/Fig3_simple_plotbg-{plot_bg}_season-{season or 'annual'}"
                 f"_Tref-{T_ref}_mark-{'on' if hosmip_markers else 'off'}"
                 f"{giss_tag}{cc_tag}{agg_tag}"
-                f"{wunit_tag}{cr_tag}{hosov_tag}{vwb_tag}{functions.fw_suffix(future_window)}")
+                f"{wunit_tag}{cr_tag}{hosov_tag}{mem_tag}{lik_tag}{vwb_tag}{functions.fw_suffix(future_window)}")
     functions.check_savepath(savepath)
+    functions.fit_print_width(fig)
     fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
     fig.savefig(savepath + '.pdf', dpi=400, bbox_inches='tight',
@@ -428,7 +461,7 @@ if __name__ == '__main__':
     plot_bg = 'white'
     window = 10
     season = cmip_range_season
-    T_ref = 'pi'
+    T_ref = cmip_range_T_ref
     hosmip_markers = False
     giss_time_period = '2101-2300'
     cmip_cooling_show = False
@@ -437,6 +470,7 @@ if __name__ == '__main__':
     # cmip_range_statedep/calset/predictors are set in the LOAD DATA cell
     # (they select the cache).
     nahosmip_overlay = False  # True -> hatch the NAHosMIP min-max on top (appendix)
+    likely_range = False  # True -> likely range of constrained weakening (Portmann et al. 2026) on the projection strip
     aggregate_first = True
     weakening_unit = 'pct'
     future_window = None
@@ -458,6 +492,6 @@ if __name__ == '__main__':
                                 cmip_range_statedep=cmip_range_statedep,
                                 cmip_range_calset=cmip_range_calset,
                                 cmip_range_predictors=cmip_range_predictors,
-                                nahosmip_overlay=nahosmip_overlay)
+                                nahosmip_overlay=nahosmip_overlay, likely_range=likely_range)
     print(f"Saved {savepath}")
 # %%

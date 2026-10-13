@@ -34,6 +34,7 @@ from pathlib import Path
 
 import numpy as np
 import xarray as xr
+CFTIME = xr.coders.CFDatetimeCoder(use_cftime=True)  # xarray >= 2025.1: the use_cftime kwarg is deprecated
 import cftime
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -184,7 +185,7 @@ def open_monthly_pool(model_slug, experiment, member):
     if not files:
         return None
     return xr.open_mfdataset(
-        files, parallel=False, use_cftime=True,
+        files, parallel=False, decode_times=CFTIME,
         data_vars='minimal', coords='minimal', compat='override')
 
 
@@ -237,7 +238,7 @@ def _calibrate():
             print(f'    SKIP: expected file missing ({expected})')
             continue
 
-        expected_ds = xr.open_dataset(expected, use_cftime=True)
+        expected_ds = xr.open_dataset(expected, decode_times=CFTIME)
         print(f'    expected sizes: {dict(expected_ds.sizes)}')
 
         monthly = open_monthly_pool(model_slug, exp_pool, member)
@@ -411,7 +412,7 @@ def build_giss_pi_climatology():
             print(f'  no {season} files yet — skip')
             results[season] = None
             continue
-        ds_list = [xr.open_dataset(f, use_cftime=True) for f in present]
+        ds_list = [xr.open_dataset(f, decode_times=CFTIME) for f in present]
         ens = xr.concat([d['tas'] for d in ds_list],
                         dim=xr.Variable('realiz', [m for m, f in zip(members, files) if os.path.exists(f)]))
         pi = ens.sel(time=slice(*PI_WINDOW)).mean(['time', 'realiz'])

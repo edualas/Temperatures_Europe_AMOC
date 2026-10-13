@@ -138,16 +138,16 @@ def _annotate_wald(ax, lc, fg, bg):
     if 'wald_pvalue' not in lc or not np.isfinite(lc.get('wald_pvalue', np.nan)):
         return
     annot = (
-        f'Wald-F p          = {lc["wald_pvalue"]:.3f}\n'
-        f'partial R²_indep  = {lc["partial_r2_indep"]:.4f}\n'
-        f'ΔR²_total_indep   = {lc["delta_r2_total_indep"]:.5f}\n'
-        f'max |Δβ|          = {lc["max_pairwise_slope_diff"]:.3f} K/% wkn'
+        f'Wald-F p = {lc["wald_pvalue"]:.3f}\n'
+        f'partial R² = {lc["partial_r2_indep"]:.4f}\n'
+        rf'$\Delta\mathrm{{R}}^2_\mathrm{{total}}$ = {lc["delta_r2_total_indep"]:.5f}' '\n'
+        f'max |Δβ| = {lc["max_pairwise_slope_diff"]:.3f} K/% wkn'
     )
     ax.text(
         0.97, 0.23, annot,
-        transform=ax.transAxes, fontsize=8,
-        va='bottom', ha='right', ma='left', family='monospace',
-        bbox=dict(facecolor=bg, edgecolor=fg, alpha=0.85,
+        transform=ax.transAxes, fontsize=5,
+        va='bottom', ha='right', ma='left',
+        bbox=dict(facecolor=bg, edgecolor=fg, alpha=0.85, linewidth=0.4,
                   boxstyle='round,pad=0.4'),
     )
 
@@ -161,7 +161,7 @@ def make_figure(boot_data, multi_model_dict, masks, si_ds,
                 var='tas', region='EU', season='', plot_bg='white',
                 verbose_country_scan=False, recompute_most_rejecting=True):
     plt.style.use('default')
-    plt.rcParams.update({'font.size': 12})
+    plt.rcParams.update(functions.PRINT_RC)
     if plot_bg == 'black':
         plt.style.use('dark_background')
         plt.rcParams['axes.facecolor'] = '#191919'
@@ -170,7 +170,9 @@ def make_figure(boot_data, multi_model_dict, masks, si_ds,
     fg = 'black' if plot_bg != 'black' else 'white'
     bg = 'white' if plot_bg != 'black' else '#191919'
 
-    fig = plt.figure(figsize=(14, 12))
+    sc = 0.614  # print scale: old crop 298 mm → 183 mm (fit_print_width sets the exact canvas)
+    fig = plt.figure(figsize=(14 * sc, 12 * sc))
+    fig.set_size_inches(14 * sc, 12 * sc, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
     gs = fig.add_gridspec(
         2, 2,
         height_ratios=[1.0, 1.0], width_ratios=[1.0, 1.0],
@@ -180,6 +182,7 @@ def make_figure(boot_data, multi_model_dict, masks, si_ds,
     ax_b = fig.add_subplot(gs[0, 1], projection=ccrs.Robinson(central_longitude=8))
     ax_c = fig.add_subplot(gs[1, 0])
     ax_d = fig.add_subplot(gs[1, 1])
+    row = 10 / (ax_c.get_position().height * fig.get_figheight() * 72)  # 10 pt in axes fraction (equation rows)
 
     # ------------------------------------------------------------------
     # TOP ROW: maps a (partial R²_indep) and b (ΔR²_total_indep)
@@ -206,17 +209,17 @@ def make_figure(boot_data, multi_model_dict, masks, si_ds,
         norm = mcolors.BoundaryNorm(bounds, cmap.N, clip=False)
 
         ax.spines['geo'].set_visible(False)
-        ax.set_rasterized(True)
-        ax.coastlines(color=fg, linewidth=0.5, zorder=3)
-        ax.add_feature(cfeature.BORDERS, edgecolor=fg, linewidth=0.5)
+        ax.coastlines(color=fg, linewidth=0.3, zorder=3)
+        ax.add_feature(cfeature.BORDERS, edgecolor=fg, linewidth=0.3)
         ax.add_feature(cfeature.OCEAN, facecolor=bg, zorder=2)
         pcm = ax.pcolormesh(
             lons, lats, field,
             cmap=cmap, norm=norm, transform=ccrs.PlateCarree(), shading='auto',
         )
+        functions.rasterize_map(ax, pcm)
         ax.scatter(
             stipple_lon, stipple_lat,
-            s=4.5, c=fg, marker='.', linewidths=0, alpha=0.85,
+            s=1.7, c=fg, marker='.', linewidths=0, alpha=0.85,
             transform=ccrs.PlateCarree(), zorder=4,
         )
         ax.set_extent([-18.5, 38.5, 34.8, 72], crs=ccrs.PlateCarree())
@@ -224,26 +227,15 @@ def make_figure(boot_data, multi_model_dict, masks, si_ds,
         functions.add_square(ax, -30, -18, 68, 75, colour=bg)
         cbar = fig.colorbar(pcm, ax=ax, orientation='horizontal',
                             pad=0.05, aspect=30, extend='max', ticks=bounds)
-        cbar.set_label(label, fontsize=10)
+        cbar.set_label(label)
         return cbar
 
-    _draw_map(ax_a, partial_r2, vmin=0.0, vmax=0.5, n_bins=5,
+    cbar_a = _draw_map(ax_a, partial_r2, vmin=0.0, vmax=0.5, n_bins=5,
               label="partial R² (ssp585 vs ssp126 slope diff, share of residuals)")
     _draw_map(ax_b, delta_r2, vmin=0.0, vmax=0.25, n_bins=5,
-              label="ΔR²_total (slope diff, share of total variance)")
+              label=r"$\Delta\mathrm{R}^2_\mathrm{total}$ (slope diff, share of total variance)")
 
     season_suffix = f' ({season.upper()})' if season else ''
-    ax_a.set_title(f'a) CESM2 scenario contribution (residuals){season_suffix}',
-                   fontsize=12, loc='left')
-    ax_b.set_title(f'b) CESM2 scenario contribution (total variance){season_suffix}',
-                   fontsize=12, loc='left')
-
-    fig.text(
-        0.5, 0.91,
-        'Stippling: 1-df Wald-F (HAC SE) rejects scenario-independence at 5%; '
-        'CESM2 ssp126 vs ssp585.',
-        fontsize=10, ha='center', style='italic', color=fg,
-    )
 
     # ------------------------------------------------------------------
     # BOTTOM-LEFT (c): region-mean pooled regression
@@ -254,12 +246,11 @@ def make_figure(boot_data, multi_model_dict, masks, si_ds,
         combined_reg=True, add_combined_intercept=True,
         no_plots=False, ext_ax=ax_c, plot_bg=plot_bg, season=season,
         compute_scenario_independence=True, xlim=50, low_ylim=-8,
-        equation_y_spacing=0.065,  # fraction-tall simple_eqs; stays below the Wald box
+        equation_y_pos=0.04 + 2 * row, equation_y_spacing=row,  # rows 10 pt apart (stacked °C/10%); below the Wald box
     )
     lc_eu = functions.cesm_regressions.last_call
     _annotate_wald(ax_c, lc_eu, fg, bg)
-    ax_c.set_title(f'c) {region}-mean (CESM2 pooled){season_suffix}',
-                   fontsize=12, loc='left')
+
 
     # ------------------------------------------------------------------
     # BOTTOM-RIGHT (d): most-rejecting country regression
@@ -283,7 +274,7 @@ def make_figure(boot_data, multi_model_dict, masks, si_ds,
             combined_reg=True, add_combined_intercept=True,
             no_plots=False, ext_ax=ax_d, plot_bg=plot_bg, season=season,
             compute_scenario_independence=True, xlim=50, low_ylim=-8,
-            equation_y_spacing=0.065,  # fraction-tall simple_eqs; stays below the Wald box
+            equation_y_pos=0.04 + 2 * row, equation_y_spacing=row,
         )
         title_tag = sel['label']
     elif sel['kind'] == 'pixel':
@@ -294,7 +285,7 @@ def make_figure(boot_data, multi_model_dict, masks, si_ds,
             combined_reg=True, add_combined_intercept=True,
             no_plots=False, ext_ax=ax_d, plot_bg=plot_bg, season=season,
             compute_scenario_independence=True,
-            equation_y_spacing=0.065,  # fraction-tall simple_eqs; stays below the Wald box
+            equation_y_pos=0.04 + 2 * row, equation_y_spacing=row,
         )
         title_tag = sel['label']
     else:
@@ -308,17 +299,30 @@ def make_figure(boot_data, multi_model_dict, masks, si_ds,
     if sel['kind'] != 'none':
         lc_rej = functions.cesm_regressions.last_call
         _annotate_wald(ax_d, lc_rej, fg, bg)
-    ax_d.set_title(f'd) {title_tag} (most-rejecting case){season_suffix}',
-                   fontsize=12, loc='left')
+    functions.panel_headers(fig, [ax_a, ax_b], [f'CESM2 scenario contribution (residuals){season_suffix}',
+                                                f'CESM2 scenario contribution (total variance){season_suffix}'])
+    dy_c = functions.panel_headers(fig, [ax_c, ax_d], [f'{region}-mean (CESM2 pooled){season_suffix}',
+                                                       f'{title_tag} (most-rejecting case){season_suffix}'], letters='cd')
+    for ax in (ax_c, ax_d):
+        if ax.get_legend():
+            ax.get_legend().set_bbox_to_anchor((1, 0.42), transform=ax.transAxes)  # centre left sat on the scatter at print size
+            ax.get_legend().set_loc('lower right')  # empty band between the scatter and the Wald box
+    # stippling key centred in the band between the colourbar labels and the panel c/d headers
+    fig.draw_without_rendering()
+    y_key = (cbar_a.ax.get_tightbbox().y0 + ax_c.bbox.y1 + (dy_c + 6) * fig.dpi / 72) / 2 / fig.bbox.height  # header cap height ~6 pt
+    fig.legend([plt.Line2D([], [], marker='.', color=fg, linestyle='None', markersize=2.5)],
+               ['Stippling: 1-df Wald-F (HAC SE) rejects scenario-independence at 5% (CESM2 SSP1-2.6 vs SSP5-8.5)'],
+               loc='center', bbox_to_anchor=(0.5, y_key), frameon=False, fontsize=6, handletextpad=0.2, borderpad=0, borderaxespad=0)
 
     # ------------------------------------------------------------------
     # SAVE
     # ------------------------------------------------------------------
     savepath = (f"../plots/FigSupp_cesm_scenario_independence_var-{var}_region-{region}"
                 f"_season-{season or 'annual'}_plotbg-{plot_bg}")
-    fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight',
+    functions.fit_print_width(fig)
+    fig.savefig(savepath + '.png', dpi=300, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
-    fig.savefig(savepath + '.pdf', dpi=400, bbox_inches='tight',
+    fig.savefig(savepath + '.pdf', dpi=600, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
     return fig, savepath
 

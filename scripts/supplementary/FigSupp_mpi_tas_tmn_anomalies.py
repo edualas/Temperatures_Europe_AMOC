@@ -4,6 +4,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.text
 from matplotlib.colors import BoundaryNorm
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib import ticker
@@ -33,7 +34,7 @@ if __name__ == '__main__':
 
 def make_figure(data_dict, ssp='ssp245', hosing='1', plot_bg='white', future_window=None):
     plt.style.use('default')
-    plt.rcParams.update({'font.size': 12})
+    plt.rcParams.update(functions.PRINT_RC)
     fw = functions.FUTURE_WINDOW if future_window is None else tuple(future_window)
     if plot_bg == 'black':
         plt.style.use('dark_background')
@@ -43,14 +44,15 @@ def make_figure(data_dict, ssp='ssp245', hosing='1', plot_bg='white', future_win
     nrows = 2
     ncols = 2
 
-    panel_labels = ['a)', 'b)', 'c)', 'd)']
-
-    fig, axes = plt.subplots(nrows, ncols, figsize=(10, 8),
+    sc = 0.744  # print scale: old crop 245.9 mm → 183 mm (fit_print_width sets the exact canvas)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(10 * sc, 8 * sc),
                              subplot_kw={'projection': ccrs.Robinson(central_longitude=8)},
                              constrained_layout=False)
+    fig.set_size_inches(10 * sc, 8 * sc, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
+    fg = 'black' if plot_bg != 'black' else 'white'
     axes = axes.flatten()
 
-    plt.subplots_adjust(hspace=0.15, wspace=0.05, top=0.92, bottom=0.08, left=0.05, right=0.85)
+    plt.subplots_adjust(hspace=0.04, wspace=0.05, top=0.92, bottom=0.08, left=0.05, right=0.85)  # hspace 0.15 → 0.04: the panel titles below the maps became column headers above
 
     # Get preindustrial reference (1850-1899) from historical data
     his_tas = data_dict['']['tas']['his']
@@ -119,15 +121,15 @@ def make_figure(data_dict, ssp='ssp245', hosing='1', plot_bg='white', future_win
     mappables = []
     for i, ax in enumerate(axes):
         ax.spines['geo'].set_visible(False)
-        ax.set_rasterized(True)
-        ax.coastlines(color='black' if plot_bg != 'black' else 'white', linewidth=0.6)
-        ax.add_feature(cfeature.BORDERS, edgecolor='black' if plot_bg != 'black' else 'white', linewidth=0.3)
+        ax.coastlines(color='black' if plot_bg != 'black' else 'white', linewidth=0.45)
+        ax.add_feature(cfeature.BORDERS, edgecolor='black' if plot_bg != 'black' else 'white', linewidth=0.25)
         ax.add_feature(cfeature.LAND, facecolor='white' if plot_bg != 'black' else '#191919')
         ax.add_feature(cfeature.OCEAN, facecolor='white' if plot_bg != 'black' else '#191919', zorder=2)
 
         contour = ax.contourf(lon, lat, data_to_plot[i],
                               levels=levels, cmap=main_cmap, norm=norm,
                               transform=ccrs.PlateCarree(), extend='both')
+        functions.rasterize_map(ax, contour)
         mappables.append(contour)
 
         ax.set_extent([-18.5, 38.5, 34.8, 72], crs=ccrs.PlateCarree())
@@ -136,24 +138,18 @@ def make_figure(data_dict, ssp='ssp245', hosing='1', plot_bg='white', future_win
         functions.add_square(ax, -13.5, 0, 60, 75.5, colour='#191919' if plot_bg == 'black' else 'white')
         functions.add_square(ax, -30, -18, 68, 75, colour='#191919' if plot_bg == 'black' else 'white')
 
-    # Add panel labels and titles
-    title_text = [
-        'a) Annual mean surface temperature',
-        'b) Annual minimum surface temperature',
-        'c) Annual mean surface temperature',
-        'd) Annual minimum surface temperature'
-    ]
-
-    for i, ax in enumerate(axes):
-        ax.text(0.5, -0.05, title_text[i], transform=ax.transAxes, fontsize=11,
-                ha='center', va='top',
-                color='black' if plot_bg != 'black' else 'white')
-
-    # Add row and column labels
-    fig.text(0.01, 0.73, '2091-2100', transform=fig.transFigure, fontsize=14, ha='left', va='center',
-             fontweight='bold', rotation=90, color='black' if plot_bg != 'black' else 'white')
-    fig.text(0.01, 0.30, '2289-2298', transform=fig.transFigure, fontsize=14, ha='left', va='center',
-             fontweight='bold', rotation=90, color='black' if plot_bg != 'black' else 'white')
+    # Column headers (variable) above the maps, row headers (window) left of them, letters inside each map's top-left
+    # corner; figure-level texts, as the map axes are rasterised.
+    fig.draw_without_rendering()
+    for ax, title in zip(axes[:2], ['Annual mean surface temperature', 'Annual minimum surface temperature']):
+        fig.add_artist(matplotlib.text.Annotation(title, (0.5, 1), xycoords=ax.transAxes, xytext=(0, 3), textcoords='offset points',
+                                                  fontsize=7, fontweight='bold', ha='center', va='bottom', color=fg))
+    for ax, window in zip(axes[::2], [f'{fw[0]}–{fw[1]}', '2289–2298']):
+        fig.add_artist(matplotlib.text.Annotation(window, (0, 0.5), xycoords=ax.transAxes, xytext=(-3, 0), textcoords='offset points',
+                                                  fontsize=7, fontweight='bold', ha='right', va='center', rotation=90, color=fg))
+    for ax, letter in zip(axes, 'abcd'):
+        fig.add_artist(matplotlib.text.Annotation(letter, (0, 1), xycoords=ax.transAxes, xytext=(0, -1), textcoords='offset points',
+                                                  fontsize=8, fontweight='bold', ha='left', va='top', color=fg))
 
     # Colorbar
     right = axes[1].get_position().x1
@@ -165,9 +161,8 @@ def make_figure(data_dict, ssp='ssp245', hosing='1', plot_bg='white', future_win
 
     cax = fig.add_axes([cbar_x, bottom, cbar_width, cbar_height])
     cbar = fig.colorbar(mappables[0], cax=cax, orientation='vertical', extend='both')
-    cbar.ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x:.0f}"))
-    cbar.set_label(r'$\Delta T$ w.r.t. preindustrial (1850-1899) [°C]', fontsize=12, labelpad=10,
-                   color='black' if plot_bg != 'black' else 'white')
+    cbar.ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x:.0f} °C".replace('-', '−')))
+    cbar.set_label(f'ΔT w.r.t. 1850–1899, {functions.ssp_labels[ssp]} with {hosing} Sv hosing', labelpad=3, color=fg)
 
     # Add white borders on top of each subplot to cover colored edge artifacts in PDF
     border_width = 0.001
@@ -184,14 +179,10 @@ def make_figure(data_dict, ssp='ssp245', hosing='1', plot_bg='white', future_win
             fig.add_artist(plt.Rectangle((bbox.x1 - border_width, bbox.y0), border_width, bbox.height,
                                          transform=fig.transFigure, color=border_color, zorder=1000, clip_on=False))
 
-    # Main title
-    fig.suptitle(f'Annual mean vs. annual minimum temperature anomalies w.r.t preindustrial\nunder {functions.ssp_labels[ssp]} with 1Sv hosing',
-                 fontsize=14, fontweight='bold', y=0.98,
-                 color='black' if plot_bg != 'black' else 'white')
-
     savepath = f'../plots/FigSupp_mpi_tas_tmn_anomalies_{ssp}_plotbg-{plot_bg}{functions.fw_suffix(future_window)}'
-    fig.savefig(savepath + '.png', bbox_inches='tight', transparent=True if plot_bg == 'black' else False, dpi=200)
-    fig.savefig(savepath + '.pdf', bbox_inches='tight', dpi=400, transparent=True if plot_bg == 'black' else False)
+    functions.fit_print_width(fig)
+    fig.savefig(savepath + '.png', bbox_inches='tight', transparent=True if plot_bg == 'black' else False, dpi=300)
+    fig.savefig(savepath + '.pdf', bbox_inches='tight', dpi=600, transparent=True if plot_bg == 'black' else False)
 
     return fig, savepath
 

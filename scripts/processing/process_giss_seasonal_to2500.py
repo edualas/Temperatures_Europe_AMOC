@@ -20,6 +20,7 @@ import os
 from glob import glob
 
 import xarray as xr
+CFTIME = xr.coders.CFDatetimeCoder(use_cftime=True)  # xarray >= 2025.1: the use_cftime kwarg is deprecated
 
 import process_seasonal_tas as pst
 
@@ -41,7 +42,7 @@ def _open_monthly(member):
     if not files:
         raise FileNotFoundError(f'No monthly tas chunks for {member} at {pattern}')
     return xr.open_mfdataset(
-        files, parallel=False, use_cftime=True,
+        files, parallel=False, decode_times=CFTIME,
         data_vars='minimal', coords='minimal', compat='override')
 
 

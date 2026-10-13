@@ -15,6 +15,7 @@ from glob import glob
 
 import numpy as np
 import xarray as xr
+CFTIME = xr.coders.CFDatetimeCoder(use_cftime=True)  # xarray >= 2025.1: the use_cftime kwarg is deprecated
 
 UO1075 = '/work/uo1075/m300817/teu_amoc/data/CMIP6'
 BU1431 = '/work/bu1431/T_EU_AMOC/CMIP6'
@@ -57,7 +58,7 @@ for slug in MODELS:
         continue
     f = djf_files[0]
     member = os.path.basename(f)[len(slug) + 1:-len('_tas_djf.nc')]
-    seas_ds = xr.open_dataset(f, use_cftime=True)
+    seas_ds = xr.open_dataset(f, decode_times=CFTIME)
     tas_seas = seas_ds['tas']
     # Pick year index in middle (avoids edge effects from partial first/last).
     yi = tas_seas.sizes['time'] // 2

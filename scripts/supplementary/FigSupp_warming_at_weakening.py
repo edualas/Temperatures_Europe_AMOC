@@ -2,6 +2,7 @@
 # %%
 # LOAD PACKAGES
 
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 plt.rcParams.update({'font.size': 12})
@@ -57,41 +58,48 @@ def make_figure(reg_ds_mpi, reg_ds_cesm, masks, hosmip_reg_ds_dict,
                 T_ref='pi', season='', giss_time_period='2101-2300',
                 cmip_range_ds=None, plot_bg='white'):
     plt.style.use('default')
-    plt.rcParams.update({'font.size': 12})
+    plt.rcParams.update({**functions.PRINT_RC, 'font.size': 6})  # 6 pt base, as Fig. 3b: rows are ~8 pt apart
     if plot_bg == 'black':
         plt.style.use('dark_background')
         plt.rcParams['axes.facecolor'] = '#191919'
         plt.rcParams['figure.facecolor'] = '#191919'
 
     n = len(weakenings)
-    fig, axes = plt.subplots(1, n, figsize=(10 * n, 14))
+    fig, axes = plt.subplots(1, n, figsize=(183 / 25.4, 183 / 25.4 * 0.7))
+    fig.set_size_inches(183 / 25.4, 183 / 25.4 * 0.7, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
+    fig.subplots_adjust(top=0.94, bottom=0.05)
     if n == 1:
         axes = [axes]
 
-    text_color = 'black' if plot_bg != 'black' else 'white'
-    for i, (ax, w) in enumerate(zip(axes, weakenings)):
-        pw.make_figure(
+    for ax, w in zip(axes, weakenings):
+        handles, labels = pw.make_figure(
             reg_ds_mpi, reg_ds_cesm, masks,
             hosmip_reg_ds_dict=hosmip_reg_ds_dict,
             amoc_weakening_pct=w, T_ref=T_ref, season=season,
             reg_ds_giss=reg_ds_giss, giss_time_period=giss_time_period,
             cmip_range_ds=cmip_range_ds,
-            plot_bg=plot_bg, ext_ax=ax, title=False, savefig=False)
-        ax.text(0.0, 1.03, f'{chr(97 + i)}) End-of-century $\Delta \mathrm{{T}}$ at {w:.0f}% AMOC weakening',
-                transform=ax.transAxes, fontsize=14, fontweight='bold',
-                color=text_color, ha='left', va='bottom')
+            plot_bg=plot_bg, ext_ax=ax, title=False, savefig=False, legend=False)[1:]
 
-    # Each panel carries its own right-hand country labels; widen the gutter so
-    # the left panel's labels don't overrun the right panel (cf. FigSupp_cmip_cooling).
-    fig.subplots_adjust(wspace=0.3)
+    # One legend for both panels, in panel a's empty ΔT < 0 half (a per-panel legend sat over the bars of the lower rows)
+    from matplotlib.legend_handler import HandlerTuple
+    axes[0].legend(handles, [re.sub(r', (?=\d{4}–)', ',\n', l.replace(' (', '\n(')) if len(l) > 27 else l for l in labels],
+                   frameon=True, loc='lower left', bbox_to_anchor=(0.005, 0.055), fontsize=6, handlelength=1.6, handletextpad=0.6,
+                   handler_map={tuple: HandlerTuple(ndivide=1)},
+                   title=('Annual' if season == '' else f'Seasonal ({season.upper()})') + ' warming',
+                   title_fontproperties={'weight': 'bold', 'size': 6}, alignment='left')
+
+    # Each panel carries its own right-hand country labels: the gutter holds them.
+    functions.place_range_panels(fig, axes)
+    functions.panel_headers(fig, axes, [f'End-of-century ΔT at {w:.0f}% AMOC weakening' for w in weakenings])
 
     cr_tag = '_cr-med' if cmip_range_ds is not None else '_cr-off'
     savepath = (f'../plots/FigSupp_warming_at_weakening_'
                 f'w-{"-".join(f"{w:.0f}" for w in weakenings)}'
                 f'_Tref-{T_ref}_season-{season or "annual"}{cr_tag}_plotbg-{plot_bg}')
-    fig.savefig(savepath + '.png', dpi=200, bbox_inches='tight',
+    functions.fit_print_width(fig)
+    fig.savefig(savepath + '.png', dpi=300, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
-    fig.savefig(savepath + '.pdf', dpi=400, bbox_inches='tight',
+    fig.savefig(savepath + '.pdf', dpi=600, bbox_inches='tight',
                 transparent=True if plot_bg == 'black' else False)
     return fig, savepath
 

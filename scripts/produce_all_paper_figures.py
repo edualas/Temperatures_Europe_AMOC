@@ -18,6 +18,7 @@ scenario + state variant; linearity_other loops cesm + giss).
 
 import sys
 import importlib
+import collections
 import matplotlib.pyplot as plt
 import functions  # imported first: its shim puts scripts/ subfolders on sys.path
 
@@ -41,13 +42,14 @@ import FigSupp_scaling_factor_correlations as supp_scaling_corr # type: ignore
 import FigSupp_synthetic_scaling_factors as supp_synth_sf # type: ignore
 import FigSupp_mpi_intercept_comparison as supp_icpt_comp # type: ignore
 import FigSupp_cmip_range_statedep_robustness as supp_range_robustness # type: ignore
+import FigSupp_mpi_pd_maps as supp_pd_maps # type: ignore
 
 for _mod in [functions, Fig1, Fig2, Fig3, Fig3_simple, supp_std_errors, supp_tas_anom,
              supp_reg_maps, supp_cesm_maps, supp_giss_maps, supp_giss_ts,
              supp_scenindep, supp_scenindep_cesm, supp_linearity_mpi,
              supp_linearity_other, supp_binary, cmip_cooling, supp_cmip_cooling,
              supp_warming_weak, supp_warm_unc, supp_scaling_corr, supp_synth_sf,
-             supp_icpt_comp, supp_range_robustness]:
+             supp_icpt_comp, supp_range_robustness, supp_pd_maps]:
     importlib.reload(_mod)
 
 make_fig1 = Fig1.make_figure
@@ -68,6 +70,7 @@ make_binary = supp_binary.make_figure
 make_cmip_cooling = supp_cmip_cooling.make_figure
 make_warming_weak = supp_warming_weak.make_figure
 make_warm_unc = supp_warm_unc.make_figure
+make_pd_maps = supp_pd_maps.make_figure
 make_scaling_corr = supp_scaling_corr.make_figure
 make_synth_sf = supp_synth_sf.make_figure
 make_icpt_comp = supp_icpt_comp.make_figure
@@ -85,69 +88,164 @@ FUTURE_WINDOW_OVERRIDE = None
 
 #%%
 ########################################
+# FIGURE SELECTION AND DATA SOURCES
+# The shared datasets each figure key draws on; only those of the requested
+# figures are loaded (a full run loads everything, in the order below).
+
+MMD = ('multi_model_dict',)  # multi_model_dict and masks come from one loader
+FIGURE_SOURCES = {
+    'Fig1': ('data_dict',),
+    'Fig2': ('reg_ds_mpi',),
+    'Fig3': MMD + ('reg_ds_mpi', 'reg_ds_cesm', 'hosmip_reg_ds_dict', 'reg_ds_giss', 'reg_ds_giss_panel', 'cmip_cooling_ds', 'cmip_ranges'),
+    'Fig3_simple': MMD + ('reg_ds_mpi', 'reg_ds_cesm', 'hosmip_reg_ds_dict', 'reg_ds_giss', 'reg_ds_giss_panel', 'cmip_cooling_ds', 'cmip_ranges'),
+    'FigSupp_mpi_std_errors': ('reg_ds_mpi',),
+    'FigSupp_mpi_tas_tmn_anomalies': ('data_dict',),
+    'FigSupp_multimodel_regression_maps': MMD + ('reg_ds_mpi', 'reg_ds_cesm', 'hosmip_reg_ds_dict', 'reg_ds_giss'),
+    'FigSupp_cesm_net_cooling_maps': MMD + ('boot_data', 'reg_ds_cesm'),
+    'FigSupp_giss_net_cooling_maps': MMD + ('reg_ds_giss',),
+    'FigSupp_giss_sim_regression': ('giss_ts_inputs',),
+    'FigSupp_scenario_independence': ('data_dict', 'si_ds'),
+    'FigSupp_mpi_state_independence': ('data_dict', 'si_ds_state'),
+    'FigSupp_scenario_independence_cesm': MMD + ('boot_data', 'si_ds_cesm'),
+    'FigSupp_mpi_linearity': ('data_dict', 'lin_ds_mpi'),
+    'FigSupp_linearity_other': MMD + ('boot_data', 'lin_ds_cesm', 'lin_ds_giss', 'giss_members'),
+    'FigSupp_mpi_net_cooling_binary': ('reg_ds_mpi',),
+    'FigSupp_warming_at_weakening': MMD + ('reg_ds_mpi', 'reg_ds_cesm', 'hosmip_reg_ds_dict', 'reg_ds_giss', 'cmip_ranges'),
+    'FigSupp_mpi_pd_maps': (),
+    'FigSupp_warming_uncertainty': MMD + ('reg_ds_mpi', 'reg_ds_cesm', 'hosmip_reg_ds_dict', 'reg_ds_giss', 'cmip_ranges'),
+    'FigSupp_scaling_factor_correlations': MMD + ('hosmip_reg_ds_dict', 'reg_ds_giss', 'reg_ds_giss_panel', 'gwl_data'),
+    'FigSupp_synthetic_scaling_factors': MMD + ('wt_ds', 'hosmip_reg_ds_dict', 'reg_ds_giss', 'reg_ds_giss_panel', 'gwl_data', 'reg_ds_mpi', 'reg_ds_cesm'),
+    'FigSupp_synthetic_scaling_factors_stack': MMD + ('wt_ds', 'hosmip_reg_ds_dict', 'reg_ds_giss', 'reg_ds_giss_panel', 'gwl_data', 'reg_ds_mpi', 'reg_ds_cesm'),
+    'FigSupp_mpi_intercept_comparison': ('data_dict',),
+    'FigSupp_cmip_range_statedep_robustness': MMD + ('reg_ds_mpi', 'reg_ds_cesm', 'hosmip_reg_ds_dict', 'reg_ds_giss', 'cmip_ranges'),
+    'FigSupp_cmip_cooling': MMD + ('cmip_cooling_ds',),
+}
+if FUTURE_WINDOW_OVERRIDE is not None:
+    FIGURE_SOURCES.update({'Fig2_fw': (), 'Fig3_fw': MMD + ('reg_ds_giss_panel',), 'FigSupp_mpi_tas_tmn_anomalies_fw': ('data_dict',),
+                           'FigSupp_cesm_net_cooling_maps_fw': MMD + ('boot_data',), 'FigSupp_giss_net_cooling_maps_fw': MMD})
+# Not in the data package (raw MPI-ESM tmn and the +1 Sv run): skipped in package mode.
+RAW_ONLY = {'FigSupp_mpi_tas_tmn_anomalies', 'FigSupp_mpi_tas_tmn_anomalies_fw', 'Fig1 (+1Sv)'}
+
+
+def _is_interactive():
+    try:
+        get_ipython() # type: ignore
+        return True
+    except NameError:
+        return False
+
+# Filter by CLI arguments if provided (skip in interactive/Jupyter environments)
+if _is_interactive() or len(sys.argv) == 1:
+    requested = list(FIGURE_SOURCES)  # generate all
+else:
+    requested = sys.argv[1:]
+for name in list(requested):
+    if name not in FIGURE_SOURCES:
+        print(f"Warning: '{name}' not found in FIGURE_CONFIGS. Available: {list(FIGURE_SOURCES)}")
+        requested.remove(name)
+if functions.DATA_MODE == 'package':
+    requested = [r for r in requested if r not in RAW_ONLY]
+need = {src for name in requested for src in FIGURE_SOURCES[name]}
+if need & {'reg_ds_giss', 'reg_ds_giss_panel', 'boot_data'}:
+    need |= set(MMD)  # these take masks
+if 'si_ds_state' in need:
+    need |= {'data_dict', 'hosmip_reg_ds_dict'} | set(MMD)
+
+#%%
+########################################
 # DATA LOADING
-# Each dataset is loaded once and shared across all figures that need it.
+# Each dataset is loaded once and shared across all figures that need it;
+# a dataset no requested figure draws on stays None.
 
-print("Loading MPI-ESM data...")
-try:
-    data_dict = functions.load_mpi_esm_data(eur_only=True)        # Fig1, tas_anom, linearity, scen-indep
-except FileNotFoundError as e:
-    # off-Levante cache mirror: raw MPI-GE/ssphos fields not mirrored; the
-    # figures needing data_dict (Fig1 family) fail loudly at dispatch instead
-    print(f"WARNING: raw MPI-ESM data unavailable ({e}); data_dict = None")
-    data_dict = None
+data_dict = reg_ds_mpi = reg_ds_cesm = multi_model_dict = masks = hosmip_reg_ds_dict = None
+reg_ds_giss = reg_ds_giss_panel = gwl_data = boot_data = si_ds = lin_ds_mpi = lin_ds_cesm = lin_ds_giss = None
+si_ds_cesm = si_ds_state = amoc_giss = tas_giss = giss_ts_inputs = cmip_cooling_ds = wt_ds = None
+cmip_range_ds = collections.defaultdict(lambda: None)
+cmip_range_ds_pd = collections.defaultdict(lambda: None)
+cmip_range_ds_pred_wt = cmip_range_ds_none_pred_wt = None
 
-print("Loading MPI-ESM regression dataset...")
-reg_ds_mpi = functions.load_regression_ds_mpi()                    # Fig2, Fig3, std_errors, reg_maps, binary
+if 'data_dict' in need:
+    print("Loading MPI-ESM data...")
+    try:
+        data_dict = functions.load_mpi_esm_data(eur_only=True)        # Fig1, tas_anom, linearity, scen-indep
+    except FileNotFoundError as e:
+        # off-Levante cache mirror: raw MPI-GE/ssphos fields not mirrored; the
+        # figures needing data_dict (Fig1 family) fail loudly at dispatch instead
+        print(f"WARNING: raw MPI-ESM data unavailable ({e}); data_dict = None")
+        data_dict = None
 
-print("Loading CESM2 regression dataset...")
-reg_ds_cesm = functions.get_cesm_reg_ds(recompute=False)           # Fig3, reg_maps, cesm_maps
+if 'reg_ds_mpi' in need:
+    print("Loading MPI-ESM regression dataset...")
+    reg_ds_mpi = functions.load_regression_ds_mpi()                    # Fig2, Fig3, std_errors, reg_maps, binary
 
-print("Loading HosMIP multi-model data...")
-multi_model_dict, masks = functions.get_full_multi_model_dict()    # Fig3, reg_maps, cesm_maps, linearity, scen-indep
+if 'reg_ds_cesm' in need:
+    print("Loading CESM2 regression dataset...")
+    reg_ds_cesm = functions.get_cesm_reg_ds(recompute=False)           # Fig3, reg_maps, cesm_maps
 
-print("Loading HosMIP regression datasets...")
-hosmip_reg_ds_dict = functions.get_hosmip_reg_ds(recompute=False)  # Fig3, reg_maps, scen-indep (state)
+if 'multi_model_dict' in need:
+    print("Loading HosMIP multi-model data...")
+    multi_model_dict, masks = functions.get_full_multi_model_dict()    # Fig3, reg_maps, cesm_maps, linearity, scen-indep
 
-print("Loading GISS-E2-1-G regression and per-season panel data...")
-reg_ds_giss = functions.get_giss_reg_ds(recompute=False, masks=masks)  # Fig3 panel e markers, giss_maps
-reg_ds_giss_panel = {
-    s: functions.get_giss_panel_data(masks=masks, season=s, recompute=False)
-    for s in ['', 'djf', 'jja']
-}                                                                       # Fig3 panel a-d scatter
+if 'hosmip_reg_ds_dict' in need:
+    print("Loading HosMIP regression datasets...")
+    hosmip_reg_ds_dict = functions.get_hosmip_reg_ds(recompute=False)  # Fig3, reg_maps, scen-indep (state)
 
-print("Loading GWL diagnostic data (CMIP6 hist ens-mean AMOC)...")
-gwl_data = functions.get_gwl_diagnostic_data(recompute=False)           # scaling_factor_correlations (hist baseline)
+if 'reg_ds_giss' in need:
+    print("Loading GISS-E2-1-G regression and per-season panel data...")
+    reg_ds_giss = functions.get_giss_reg_ds(recompute=False, masks=masks)  # Fig3 panel e markers, giss_maps
+if 'reg_ds_giss_panel' in need:
+    reg_ds_giss_panel = {
+        s: functions.get_giss_panel_data(masks=masks, season=s, recompute=False,  # countries for the IE/country variants
+                                         regions=('EU', 'NEU', 'WCE', 'MED') + tuple(functions.regions_cutoff30k))
+        for s in ['', 'djf', 'jja']
+    }                                                                       # Fig3 panel a-d scatter
 
-print("Loading other studies data...")
-_, _, boot_data, _ = functions.get_other_studies_data(masks)        # cesm_maps, linearity_other, scen-indep_cesm
+if 'gwl_data' in need:
+    print("Loading GWL diagnostic data (CMIP6 hist ens-mean AMOC)...")
+    gwl_data = functions.get_gwl_diagnostic_data(recompute=False)           # scaling_factor_correlations (hist baseline)
 
-print("Loading MPI-ESM scenario-independence diagnostics...")
-si_ds = functions.get_scenario_independence_diagnostics_mpi(var='tas')  # scen-indep (scenario variant)
+if 'boot_data' in need:
+    print("Loading other studies data...")
+    _, _, boot_data, _ = functions.get_other_studies_data(masks)        # cesm_maps, linearity_other, scen-indep_cesm
+
+if 'si_ds' in need:
+    print("Loading MPI-ESM scenario-independence diagnostics...")
+    si_ds = functions.get_scenario_independence_diagnostics_mpi(var='tas')  # scen-indep (scenario variant)
 
 # ── Supplementary-figure-specific diagnostics (cached reads) ──────────────
-print("Loading linearity diagnostics (MPI/CESM/GISS)...")
-lin_ds_mpi = functions.get_linearity_diagnostics_mpi(var='tas')          # linearity (mpi)
-lin_ds_cesm = functions.get_linearity_diagnostics_cesm(var='tas')        # linearity_other (cesm)
-lin_ds_giss = functions.get_linearity_diagnostics_giss(var='tas')        # linearity_other (giss)
+if need & {'lin_ds_mpi', 'lin_ds_cesm', 'lin_ds_giss'}:
+    print("Loading linearity diagnostics (MPI/CESM/GISS)...")
+if 'lin_ds_mpi' in need:
+    lin_ds_mpi = functions.get_linearity_diagnostics_mpi(var='tas')          # linearity (mpi)
+if 'lin_ds_cesm' in need:
+    lin_ds_cesm = functions.get_linearity_diagnostics_cesm(var='tas')        # linearity_other (cesm)
+if 'lin_ds_giss' in need:
+    lin_ds_giss = functions.get_linearity_diagnostics_giss(var='tas')        # linearity_other (giss)
 
-print("Loading CESM scenario-independence diagnostics...")
-si_ds_cesm = functions.get_scenario_independence_diagnostics_cesm(var='tas')  # scen-indep_cesm
+if 'si_ds_cesm' in need:
+    print("Loading CESM scenario-independence diagnostics...")
+    si_ds_cesm = functions.get_scenario_independence_diagnostics_cesm(var='tas')  # scen-indep_cesm
 
-print("Loading MPI state-independence diagnostics...")
-si_ds_state = supp_scenindep.load_scenario_independence_diagnostics_mpi_state(
-    data_dict=data_dict, multi_model_dict=multi_model_dict,
-    hosmip_reg_ds_dict=hosmip_reg_ds_dict, var='tas', recompute=False)   # scen-indep (state variant)
+if 'si_ds_state' in need:
+    print("Loading MPI state-independence diagnostics...")
+    si_ds_state = supp_scenindep.load_scenario_independence_diagnostics_mpi_state(
+        data_dict=data_dict, multi_model_dict=multi_model_dict,
+        hosmip_reg_ds_dict=hosmip_reg_ds_dict, var='tas', recompute=False)   # scen-indep (state variant)
 
-print("Loading GISS member series for the GISS time-series figure...")
-amoc_giss, tas_giss = functions.load_giss_member_amoc_tas(season='')     # linearity_other (giss)
-giss_ts_inputs = supp_giss_ts.load_inputs(season='')                     # giss_sim_regression (FigGiss1)
+if need & {'giss_members', 'giss_ts_inputs'}:
+    print("Loading GISS member series for the GISS time-series figure...")
+if 'giss_members' in need:
+    amoc_giss, tas_giss = functions.load_giss_member_amoc_tas(season='')     # linearity_other (giss)
+if 'giss_ts_inputs' in need:
+    giss_ts_inputs = supp_giss_ts.load_inputs(season='')                     # giss_sim_regression (FigGiss1)
 
-print("Loading CMIP-projected cooling dataset...")
-cmip_cooling_ds = cmip_cooling.make_cmip_cooling_ds(recompute=False)
+if 'cmip_cooling_ds' in need:
+    print("Loading CMIP-projected cooling dataset...")
+    cmip_cooling_ds = cmip_cooling.make_cmip_cooling_ds(recompute=False)
 
-print("Loading CMIP6 target (w, t) for synthetic scaling factors...")
-wt_ds = supp_synth_sf.get_target_wt(recompute=False)
+if 'wt_ds' in need:
+    print("Loading CMIP6 target (w, t) for synthetic scaling factors...")
+    wt_ds = supp_synth_sf.get_target_wt(recompute=False)
 
 # Per-country Synthetic CMIP6 range caches for Fig3/Fig3_simple panel e.
 # Three state-dependence treatments x four calibration configurations
@@ -156,30 +254,49 @@ wt_ds = supp_synth_sf.get_target_wt(recompute=False)
 # since 2026-09-01).
 # The cache is cache-only here (build via the FigSupp script's BUILD RANGE
 # CACHE cell), and a missing one raises rather than silently rendering cr-off.
-print("Loading Synthetic CMIP6 range caches...")
 CMIP_RANGE_CALS = ('hosing', 'full', 'nocesm2', 'consistentssp')
-cmip_range_ds = {
-    (sd, cs, ''): supp_synth_sf.get_cmip_range_ds(
-        recompute=False, state_dep=sd, cal_set=cs, verbose=False)
-    for sd in ('none', 'pooled', 'interact') for cs in CMIP_RANGE_CALS}
-# Seasonal siblings: the PI-calibrated base and the paper default only, at the
-# default calibration set. The seasonal state-dependence rests on the MPI,
-# CESM2 and GISS warm rows (the EC-Earth3 pair's BM diff fields are annual),
-# and 'loglin' has no seasonal form.
-cmip_range_ds.update({
-    (sd, 'hosing', se): supp_synth_sf.get_cmip_range_ds(
-        recompute=False, state_dep=sd, cal_set='hosing', season=se, verbose=False)
-    for sd in ('none', 'pooled') for se in ('djf', 'jja')})
-# wt-conditioning reference for the pooled default (pred-wt sibling; the
-# mirror of the pre-2026-09-01 pred-w sibling).
-cmip_range_ds_pred_wt = supp_synth_sf.get_cmip_range_ds(
-    recompute=False, state_dep='pooled', cal_set='hosing', predictors='wt',
-    verbose=False)
-# wt sibling of the 'none' treatment, for the state-dependence robustness
-# figure's second (wt) render.
-cmip_range_ds_none_pred_wt = supp_synth_sf.get_cmip_range_ds(
-    recompute=False, state_dep='none', cal_set='hosing', predictors='wt',
-    verbose=False)
+if 'cmip_ranges' in need:
+    print("Loading Synthetic CMIP6 range caches...")
+    cmip_range_ds = {
+        (sd, cs, ''): supp_synth_sf.get_cmip_range_ds(
+            recompute=False, state_dep=sd, cal_set=cs, verbose=False)
+        for sd in ('none', 'pooled', 'interact') for cs in CMIP_RANGE_CALS}
+    # Seasonal siblings: the PI-calibrated base and the paper default only, at the
+    # default calibration set. The seasonal state-dependence rests on the MPI,
+    # CESM2 and GISS warm rows (the EC-Earth3 pair's BM diff fields are annual),
+    # and 'loglin' has no seasonal form.
+    cmip_range_ds.update({
+        (sd, 'hosing', se): supp_synth_sf.get_cmip_range_ds(
+            recompute=False, state_dep=sd, cal_set='hosing', season=se, verbose=False)
+        for sd in ('none', 'pooled') for se in ('djf', 'jja')})
+    # wt-conditioning reference for the pooled default (pred-wt sibling; the
+    # mirror of the pre-2026-09-01 pred-w sibling).
+    cmip_range_ds_pred_wt = supp_synth_sf.get_cmip_range_ds(
+        recompute=False, state_dep='pooled', cal_set='hosing', predictors='wt',
+        verbose=False)
+    # wt sibling of the 'none' treatment, for the state-dependence robustness
+    # figure's second (wt) render.
+    cmip_range_ds_none_pred_wt = supp_synth_sf.get_cmip_range_ds(
+        recompute=False, state_dep='none', cal_set='hosing', predictors='wt',
+        verbose=False)
+
+    # Present-day-referenced siblings of the paper default (T_ref='pd' range:
+    # warming vs 1991-2020, weakening still % of 1850-1899 AMOC), for the PD
+    # variants of Fig3 / Fig3_simple / warming_uncertainty.
+    cmip_range_ds_pd = {
+        se: supp_synth_sf.get_cmip_range_ds(
+            recompute=False, state_dep='pooled', cal_set='hosing', season=se,
+            T_ref='pd', verbose=False)
+        for se in ('', 'djf', 'jja')}
+
+
+def cr_default(season='', T_ref='pi'):
+    """Panel-e kwargs for the paper-default range (pooled, hosing, w)."""
+    ds = (cmip_range_ds[('pooled', 'hosing', season)] if T_ref == 'pi'
+          else cmip_range_ds_pd[season])
+    return {'cmip_range_show': True, 'cmip_range_ds': ds,
+            'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing'}
+
 
 print("All data loaded.\n")
 
@@ -191,6 +308,10 @@ if FUTURE_WINDOW_OVERRIDE is not None:
     reg_ds_cesm_fw = functions.get_cesm_reg_ds(recompute=False, future_window=_fw)
     hosmip_reg_ds_dict_fw = functions.get_hosmip_reg_ds(recompute=False, future_window=_fw)
     reg_ds_giss_fw = functions.get_giss_reg_ds(recompute=False, masks=masks, future_window=_fw)
+    # Window-keyed range; its target (w, t) cache is built on Levante only.
+    cmip_range_ds_fw = supp_synth_sf.get_cmip_range_ds(
+        recompute=False, state_dep='pooled', cal_set='hosing', future_window=_fw,
+        verbose=False)
     print("Variant data loaded.\n")
 
 #%%
@@ -216,11 +337,12 @@ FIGURE_CONFIGS = {
         'function': make_fig2,
         'data_args': {'reg_ds_mpi': reg_ds_mpi},
         'variants': [
-            {'label': 'Fig2',                  'kwargs': {'only_pi': False, 'plot_season': ''}},
-            {'label': 'Fig2',                  'kwargs': {'only_pi': True, 'plot_season': ''}},
-            {'label': 'Fig2 (cbar1_left)',      'kwargs': {'only_pi': True, 'plot_season': '', 'cbar1_left': True}},
-            {'label': 'Fig2',                  'kwargs': {'only_pi': True, 'plot_season': 'djf'}},
-            {'label': 'Fig2',                  'kwargs': {'only_pi': True, 'plot_season': 'jja'}},
+            # The paper figure: one row, colour bar on the left. Seasonal siblings carry the same layout;
+            # the two-row layout (preindustrial and combined forcing) is kept for the ED/SI version.
+            {'label': 'Fig2',                  'kwargs': {'only_pi': True, 'plot_season': '', 'cbar1_left': True}},
+            {'label': 'Fig2 (DJF)',            'kwargs': {'only_pi': True, 'plot_season': 'djf', 'cbar1_left': True}},
+            {'label': 'Fig2 (JJA)',            'kwargs': {'only_pi': True, 'plot_season': 'jja', 'cbar1_left': True}},
+            {'label': 'Fig2 (two rows)',       'kwargs': {'only_pi': False, 'plot_season': ''}},
             {'label': 'FigS7 (DJF)',           'kwargs': {'only_pi': False, 'plot_season': 'djf'}},
             {'label': 'FigS8 (JJA)',           'kwargs': {'only_pi': False, 'plot_season': 'jja'}},
         ],
@@ -236,35 +358,22 @@ FIGURE_CONFIGS = {
             'cmip_cooling_ds': cmip_cooling_ds,
         },
         'variants': [
-            {'label': 'Fig3',                'kwargs': {'season': '', 'T_ref': 'pi'}},
-            {'label': 'FigS (PD ref)',       'kwargs': {'season': '', 'T_ref': 'pd'}},
-            {'label': 'FigS (DJF)',          'kwargs': {'season': 'djf', 'T_ref': 'pi'}},
-            {'label': 'FigS (JJA)',          'kwargs': {'season': 'jja', 'T_ref': 'pi'}},
-            {'label': 'FigS (PD ref, DJF)',  'kwargs': {'season': 'djf', 'T_ref': 'pd'}},
-            {'label': 'FigS (PD ref, JJA)',  'kwargs': {'season': 'jja', 'T_ref': 'pd'}},
-            {'label': 'Fig3 (markers)',      'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': True}},
-            {'label': 'Fig3 (CMIP cooling)', 'kwargs': {'season': '', 'T_ref': 'pi', 'cmip_cooling_show': True}},
             # Fig3 is supplementary now (Fig3_simple is the paper figure), so it
-            # follows every behaviour change but carries a minimal variant set.
-            # vwb is on by default; one vwb-off render is kept for verification.
+            # follows every behaviour change, incl. the paper-default range
+            # (pooled, hosing, w), but carries a minimal variant set. The 3x4
+            # range sweep lives on Fig3_simple.
+            {'label': 'Fig3',                'kwargs': {'season': '', 'T_ref': 'pi', **cr_default('')}},
+            {'label': 'FigS (PD ref)',       'kwargs': {'season': '', 'T_ref': 'pd', **cr_default('', 'pd')}},
+            {'label': 'FigS (DJF)',          'kwargs': {'season': 'djf', 'T_ref': 'pi', **cr_default('djf')}},
+            {'label': 'FigS (JJA)',          'kwargs': {'season': 'jja', 'T_ref': 'pi', **cr_default('jja')}},
+            {'label': 'FigS (PD ref, DJF)',  'kwargs': {'season': 'djf', 'T_ref': 'pd', **cr_default('djf', 'pd')}},
+            {'label': 'FigS (PD ref, JJA)',  'kwargs': {'season': 'jja', 'T_ref': 'pd', **cr_default('jja', 'pd')}},
+            {'label': 'Fig3 (markers)',      'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': True, **cr_default('')}},
+            {'label': 'Fig3 (CMIP cooling)', 'kwargs': {'season': '', 'T_ref': 'pi', 'cmip_cooling_show': True, **cr_default('')}},
+            # vwb is on by default; one vwb-off render is kept for verification
+            # (range off, as for Fig3_simple's anchor).
             {'label': 'Fig3 (no vwb, verification)',
-             'kwargs': {'season': '', 'T_ref': 'pi', 'vwb_data': False}},
-            # Range variants mirroring the paper figure's default (pooled,
-            # hosing, w): annual plus the two seasonal siblings consumed by
-            # the manuscript's fig3-old-djf/jja. The 3x4 sweep lives on
-            # Fig3_simple.
-            {'label': 'Fig3 (range pooled)',
-             'kwargs': {'season': '', 'T_ref': 'pi', 'cmip_range_show': True,
-                        'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', '')],
-                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing'}},
-            {'label': 'Fig3 (range pooled, DJF)',
-             'kwargs': {'season': 'djf', 'T_ref': 'pi', 'cmip_range_show': True,
-                        'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', 'djf')],
-                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing'}},
-            {'label': 'Fig3 (range pooled, JJA)',
-             'kwargs': {'season': 'jja', 'T_ref': 'pi', 'cmip_range_show': True,
-                        'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', 'jja')],
-                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing'}},
+             'kwargs': {'season': '', 'T_ref': 'pi', 'vwb_data': False, 'cmip_range_show': False}},
         ],
     },
     'Fig3_simple': {
@@ -280,14 +389,25 @@ FIGURE_CONFIGS = {
         'variants': [
             # The paper figure: the Synthetic CMIP6 range is on by default
             # (pooled correction, hosing calibration, w predictors). T_ref='pd'
-            # variants cannot carry the range (the renderer defines it for the
-            # PI-referenced panel only) and are explicit cr-off.
+            # variants carry its present-day-referenced sibling.
             {'label': 'Fig3_simple',
              'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct',
                         'cmip_range_show': True, 'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', '')],
                         'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing'}},
+            # Referee 2: one marker per model in the synthetic range, no combined-forcing layer.
+            {'label': 'Fig3_simple (CMIP members)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct',
+                        'cmip_range_show': True, 'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', '')],
+                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing', 'cmip_members': True}},
+            # Likely (central 66 %) range of observationally constrained weakening (Portmann et al. 2026) on the strip.
+            {'label': 'Fig3_simple (likely range)',
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct',
+                        'cmip_range_show': True, 'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', '')],
+                        'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing', 'likely_range': True}},
             {'label': 'Fig3_simple',
-             'kwargs': {'season': '', 'T_ref': 'pd', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': False}},
+             'kwargs': {'season': '', 'T_ref': 'pd', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', **cr_default('', 'pd')}},
+            {'label': 'Fig3_simple (likely range)',
+             'kwargs': {'season': '', 'T_ref': 'pd', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', **cr_default('', 'pd'), 'likely_range': True}},
             {'label': 'Fig3_simple',
              'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': True, 'aggregate_first': True, 'weakening_unit': 'pct',
                         'cmip_range_show': True, 'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', '')],
@@ -301,9 +421,9 @@ FIGURE_CONFIGS = {
                         'cmip_range_show': True, 'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', 'jja')],
                         'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing'}},
             {'label': 'Fig3_simple',
-             'kwargs': {'season': 'djf', 'T_ref': 'pd', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': False}},
+             'kwargs': {'season': 'djf', 'T_ref': 'pd', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', **cr_default('djf', 'pd')}},
             {'label': 'Fig3_simple',
-             'kwargs': {'season': 'jja', 'T_ref': 'pd', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_range_show': False}},
+             'kwargs': {'season': 'jja', 'T_ref': 'pd', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', **cr_default('jja', 'pd')}},
             # Explicit range-off render: regression anchor (nothing outside the
             # range branch may move) and the clean panel-b look.
             {'label': 'Fig3_simple (range off)',
@@ -325,8 +445,14 @@ FIGURE_CONFIGS = {
             # (range off to keep the anchor minimal).
             {'label': 'Fig3_simple (no vwb, verification)',
              'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'vwb_data': False, 'cmip_range_show': False}},
+            # vwb RCP4.5 window sensitivity (default 2400-2500), paper default otherwise.
+            # 2090-2100 stays selectable but unregistered: no collapse contrast by 2100.
+            *[{'label': f'Fig3_simple (vwb window {w})',
+               'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct',
+                          'vwb_window': w, **cr_default('')}}
+              for w in ['2150-2200', '2190-2200']],
             {'label': 'Fig3_simple (CMIP cooling)',
-             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_cooling_show': True, 'cmip_range_show': False}},
+             'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': True, 'weakening_unit': 'pct', 'cmip_cooling_show': True, **cr_default('')}},
             {'label': 'Fig3_simple (aggregate last)',
              'kwargs': {'season': '', 'T_ref': 'pi', 'hosmip_markers': False, 'aggregate_first': False, 'weakening_unit': 'pct', 'cmip_range_show': False}},
             # Synthetic CMIP6 range sweep: 3 state-dependence treatments x 4
@@ -446,7 +572,7 @@ FIGURE_CONFIGS = {
     },
     'FigSupp_giss_sim_regression': {
         'function': make_giss_ts,
-        'data_args': {**giss_ts_inputs},
+        'data_args': {**(giss_ts_inputs or {})},
         'variants': [
             {'label': 'FigSupp_giss_sim_regression', 'kwargs': {'season': ''}},
         ],
@@ -526,6 +652,13 @@ FIGURE_CONFIGS = {
                         'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', 'jja')]}},
         ],
     },
+    'FigSupp_mpi_pd_maps': {
+        'function': make_pd_maps,
+        'data_args': {},  # reads data/mpi_esm_europe_amoc_pd_maps.nc (built by processing/process_mpi_pd_maps.py)
+        'variants': [
+            {'label': 'FigSupp_mpi_pd_maps', 'kwargs': {'season': '', 'w_levels': (25, 75)}},
+        ],
+    },
     'FigSupp_warming_uncertainty': {
         'function': make_warm_unc,
         'data_args': {
@@ -534,9 +667,9 @@ FIGURE_CONFIGS = {
         },
         'variants': [
             {'label': 'FigSupp_warming_uncertainty (T_ref=pi)',
-             'kwargs': {'season': '', 'T_ref': 'pi'}},
+             'kwargs': {'season': '', 'T_ref': 'pi', 'cmip_range_ds': cmip_range_ds[('pooled', 'hosing', '')]}},
             {'label': 'FigSupp_warming_uncertainty (T_ref=pd)',
-             'kwargs': {'season': '', 'T_ref': 'pd'}},
+             'kwargs': {'season': '', 'T_ref': 'pd', 'cmip_range_ds': cmip_range_ds_pd['']}},
         ],
     },
     'FigSupp_scaling_factor_correlations': {
@@ -716,7 +849,9 @@ if FUTURE_WINDOW_OVERRIDE is not None:
                 'giss_panel_data': reg_ds_giss_panel,
             },
             'variants': [
-                {'label': f'Fig3 [fw {FUTURE_WINDOW_OVERRIDE}]', 'kwargs': {'season': '', 'T_ref': 'pi', 'future_window': FUTURE_WINDOW_OVERRIDE}},
+                {'label': f'Fig3 [fw {FUTURE_WINDOW_OVERRIDE}]', 'kwargs': {'season': '', 'T_ref': 'pi', 'future_window': FUTURE_WINDOW_OVERRIDE,
+                                                                         'cmip_range_show': True, 'cmip_range_ds': cmip_range_ds_fw,
+                                                                         'cmip_range_statedep': 'pooled', 'cmip_range_calset': 'hosing'}},
             ],
         },
         'FigSupp_mpi_tas_tmn_anomalies_fw': {
@@ -750,19 +885,6 @@ if FUTURE_WINDOW_OVERRIDE is not None:
 ########################################
 # EXECUTION
 
-# Filter by CLI arguments if provided (skip in interactive/Jupyter environments)
-def _is_interactive():
-    try:
-        get_ipython() # type: ignore
-        return True
-    except NameError:
-        return False
-
-if _is_interactive():
-    requested = list(FIGURE_CONFIGS.keys()) + ['FigSupp_cmip_cooling']  # generate all when running interactively
-else:
-    requested = sys.argv[1:] if len(sys.argv) > 1 else list(FIGURE_CONFIGS.keys()) + ['FigSupp_cmip_cooling']
-
 # Dedicated loader branch for the decade-matched CMIP-projected cooling figure:
 # its per-decade window-keyed regression caches are built on demand (heavy),
 # so register it only when actually requested. Decades are auto-pruned to those
@@ -781,12 +903,7 @@ if 'FigSupp_cmip_cooling' in requested and 'FigSupp_cmip_cooling' not in FIGURE_
         ],
     }
 
-# Validate requested figures
-for name in list(requested):
-    if name not in FIGURE_CONFIGS:
-        print(f"Warning: '{name}' not found in FIGURE_CONFIGS. Available: {list(FIGURE_CONFIGS.keys())}")
-        requested.remove(name)
-
+assert set(FIGURE_CONFIGS) <= set(FIGURE_SOURCES), set(FIGURE_CONFIGS) - set(FIGURE_SOURCES)
 for fig_name in requested:
     config = FIGURE_CONFIGS[fig_name]
     func = config['function']
@@ -795,6 +912,9 @@ for fig_name in requested:
     for variant in config['variants']:
         label = variant['label']
         kwargs = variant['kwargs']
+        if functions.DATA_MODE == 'package' and label in RAW_ONLY:
+            print(f"Skipping {label}: needs raw MPI-ESM data that the data package does not ship.")
+            continue
         print(f"Generating {label}...")
         try:
             fig, savepath = func(**data_args, **kwargs)

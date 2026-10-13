@@ -21,6 +21,7 @@ Configurable:
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.text
 from matplotlib.colors import BoundaryNorm
 from matplotlib.patches import Rectangle
 from matplotlib import ticker
@@ -93,7 +94,7 @@ def make_figure(reg_ds_giss, masks, only_pi=False, plot_bg='white',
     # positioning mirror Fig2's weakening_only handling — when Fig2's colorbar /
     # weakening_only logic changes, mirror it here.
     plt.style.use('default')
-    plt.rcParams.update({'font.size': 12})
+    plt.rcParams.update(functions.PRINT_RC)
     # CMIP6 weakening envelope for the chosen future window (canonical global
     # when future_window is None); shared by the maps and the colorbar bars.
     _ext = functions.get_amoc_extent(future_window)
@@ -114,10 +115,13 @@ def make_figure(reg_ds_giss, masks, only_pi=False, plot_bg='white',
     reg_plot_labels = ['Annual mean', 'Summer (JJA)', 'Winter (DJF)']
 
     gridspec_kw = {'height_ratios': [1, 0.05, 1]} if only_pi else {'height_ratios': [1, 0.1, 1, 1]}
+    sc = 0.67  # print scale: old crop 273 mm → 183 mm (fit_print_width sets the exact canvas)
     fig, axes = plt.subplots(
-        nrows, ncols, figsize=(12, 3 * (nrows - 1)),
+        nrows, ncols, figsize=(12 * sc, 3 * (nrows - 1) * sc),
         subplot_kw={'projection': ccrs.Robinson(central_longitude=8)},
         constrained_layout=False, gridspec_kw=gridspec_kw)
+    fig.set_size_inches(12 * sc, 3 * (nrows - 1) * sc, forward=False)  # GUI backends (macosx) round the canvas to whole pixels
+    fg = 'black' if not plot_bg == 'black' else 'white'
     axes = axes.flatten()
 
     # Hide the spacer row.
@@ -128,6 +132,12 @@ def make_figure(reg_ds_giss, masks, only_pi=False, plot_bg='white',
 
     plt.subplots_adjust(hspace=0.3, wspace=-0.4, top=0.95, bottom=0.05,
                         left=0.05, right=0.95)
+    if not only_pi:  # top row down to the row spacing of the map rows (the spacer row left a ~10 mm dead band)
+        _y = lambda k, e: getattr(axes[k].get_position(original=True), e)
+        _d = (_y(0, 'y0') - _y(6, 'y1')) - (_y(6, 'y0') - _y(9, 'y1'))
+        for _ax in axes[:3]:
+            _p = _ax.get_position(original=True)
+            _ax.set_position([_p.x0, _p.y0 - _d, _p.width, _p.height])
 
     # ---- Top row: scaling factor (annual + DJF + JJA).
     # Load the full-grid bu1431 cache for the chosen time_period per season
@@ -160,10 +170,9 @@ def make_figure(reg_ds_giss, masks, only_pi=False, plot_bg='white',
             custom_cmap=custom_cmap, colorbar_v_max=colorbar_v_max)
         reg_mappables.append(mappable)
         panel_axes.append(axes[i])
-        axes[i].text(0.5, -0.03, reg_plot_labels[i],
-                     transform=axes[i].transAxes, fontsize=12, ha='center',
-                     va='top', fontweight='bold',
-                     color='black' if not plot_bg == 'black' else 'white')
+        # figure-level labels: children of the rasterised map axes would be rasterised
+        fig.add_artist(matplotlib.text.Annotation(reg_plot_labels[i], (0.5, 0), xycoords=axes[i].transAxes, xytext=(0, -2),
+                                                  textcoords='offset points', fontsize=7, ha='center', va='top', fontweight='bold', color=fg))
 
     # ---- Bottom rows: net cooling point maps (3 SSPs × pd, pi).
     # Select the chosen time_period from reg_ds_giss before each map call.
@@ -182,17 +191,15 @@ def make_figure(reg_ds_giss, masks, only_pi=False, plot_bg='white',
                 show_cmip_range_contours=show_cmip_range_contours, amoc_extent=_ext)
             mappables.append(mappable)
             panel_axes.append(axes[3 * j + i])
-            axes[3 * j + i].text(
-                0.5, -0.03, functions.ssp_labels[ssp],
-                transform=axes[3 * j + i].transAxes,
-                fontsize=12, ha='center', va='top',
-                color=functions.hosing_colors[ssp]['ge'], fontweight='bold')
+            fig.add_artist(matplotlib.text.Annotation(functions.ssp_labels[ssp], (0.5, 0), xycoords=axes[3 * j + i].transAxes,
+                                                      xytext=(0, -2), textcoords='offset points', fontsize=7, ha='center', va='top',
+                                                      fontweight='bold', color=fg))  # black: no coloured text
         j += 1
 
     season_tag = '' if season == '' else f' [{season.upper()}]'
     row_labels = [
         ("Cooling sensitivities: local cooling as a function of additional AMOC "
-         f"weakening (GISS-E2-1-G, {time_period})"),
+         f"weakening (GISS-E2-1-G, {time_period.replace('-', '–')})"),
         "",
         f"Net-cooling AMOC weakening w.r.t. {'annual mean ' if season == '' else season.upper() + ' '}present-day temperatures ({functions.PD_LABEL}){season_tag}",
         f"Net-cooling AMOC weakening w.r.t. {'annual mean ' if season == '' else season.upper() + ' '}preindustrial temperatures (1850–1899){season_tag}",
@@ -205,19 +212,19 @@ def make_figure(reg_ds_giss, masks, only_pi=False, plot_bg='white',
         if only_pi and i == 3:
             row_top = axes[(i - 1) * ncols].get_position().y1
             fig.text(left, row_top + 0.01, row_labels[i], va='center',
-                     ha='left', fontsize=12, fontweight='bold',
+                     ha='left', fontsize=7, fontweight='bold',
                      color='black' if not plot_bg == 'black' else 'white')
             continue
         row_top = axes[i * ncols].get_position().y1
         fig.text(left, row_top + 0.01, row_labels[i], va='center', ha='left',
-                 fontsize=12, fontweight='bold',
+                 fontsize=7, fontweight='bold',
                  color='black' if not plot_bg == 'black' else 'white')
 
     for ax, label in zip(panel_axes, panel_labels):
         left = ax.get_position().x0
         top = ax.get_position().y1
         fig.text(left + 0.015, top - 0.015, label, transform=fig.transFigure,
-                 fontsize=14, ha='right', va='center', fontweight='bold',
+                 fontsize=8, ha='right', va='center', fontweight='bold',
                  color='black' if not plot_bg == 'black' else 'white')
 
     # ---- Colorbars (mirror Fig2.py geometry).
@@ -246,9 +253,9 @@ def make_figure(reg_ds_giss, masks, only_pi=False, plot_bg='white',
     cbar1 = fig.colorbar(sm1, cax=cax1, orientation='vertical', extend='max')
     cbar1.set_ticks(np.arange(0, colorbar_v_max + 1e-6, 0.3))
     cbar1.ax.yaxis.set_major_formatter(
-        ticker.FuncFormatter(lambda x, pos: f"{x:.1f}°C"))
+        ticker.FuncFormatter(lambda x, pos: f"{x:.1f} °C"))
     cbar1.set_label('Cooling per 10% additional\nAMOC weakening (GISS)',
-                    fontsize=12, labelpad=5, loc='center',
+                    fontsize=7, labelpad=3, loc='center',
                     color='black' if not plot_bg == 'black' else 'white')
 
     # ----- Lower cbar: AMOC weakening / strength.
@@ -273,17 +280,17 @@ def make_figure(reg_ds_giss, masks, only_pi=False, plot_bg='white',
             ticker.FuncFormatter(lambda x, pos: f"{x:.0f}%"))
         cbar2.ax.yaxis.set_ticks_position('right')
         cbar2.ax.yaxis.set_label_position('right')
-        cbar2.set_label('AMOC weakening', fontsize=12, labelpad=5,
+        cbar2.set_label('AMOC weakening', fontsize=7, labelpad=3,
                         loc='bottom', color=text_color)
         if not weakening_only:
             secax = cbar2.ax.secondary_yaxis('left', functions=(_w_to_s, _s_to_w))
-            secax.set_ylabel('AMOC strength (GISS)', fontsize=12, labelpad=0,
+            secax.set_ylabel('AMOC strength (GISS)', fontsize=7, labelpad=0,
                              loc='bottom', color=text_color)
             # AMOC_pi_GISS ≈ 24.3 Sv → step every 4 Sv up to 24
             secax.set_yticks(list(range(0, 25, 4)))
             secax.set_yticklabels([f'{s} Sv' for s in range(0, 25, 4)])
     else:
-        cbar2.set_label('AMOC strength (GISS)', fontsize=12, labelpad=0,
+        cbar2.set_label('AMOC strength (GISS)', fontsize=7, labelpad=0,
                         loc='bottom', color=text_color)
         cbar2.ax.yaxis.set_major_formatter(
             ticker.FuncFormatter(lambda x, pos: f"{x:.0f} Sv"))
@@ -292,7 +299,7 @@ def make_figure(reg_ds_giss, masks, only_pi=False, plot_bg='white',
         if not weakening_only:
             secax = cbar2.ax.secondary_yaxis('right',
                                              functions=(_s_to_w, _w_to_s))
-            secax.set_ylabel('AMOC weakening', fontsize=12, labelpad=5,
+            secax.set_ylabel('AMOC weakening', fontsize=7, labelpad=3,
                              loc='bottom', color=text_color)
             secax.set_yticks([10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
             secax.set_yticklabels([f'{x}%' for x in range(10, 101, 10)])
@@ -335,7 +342,7 @@ def make_figure(reg_ds_giss, masks, only_pi=False, plot_bg='white',
         cbar2.ax.plot(
             [range_positions[i] - 0.08, range_positions[i] + 1.08],
             [mpi_y, mpi_y],
-            color=line_color, linewidth=2, transform=cbar2.ax.transAxes,
+            color=line_color, linewidth=1, transform=cbar2.ax.transAxes,
             clip_on=False, zorder=11)
 
         bar_text = (f"{functions.ssp_labels[ssp]}" if only_pi
@@ -349,7 +356,7 @@ def make_figure(reg_ds_giss, masks, only_pi=False, plot_bg='white',
                       / (1 - functions.convert_strength_to_weakening(upper_bound) / 100))
         cbar2.ax.text(
             range_positions[i] + 0.6, text_y, bar_text,
-            color='white', fontsize=9, rotation=90, va='center', ha='center',
+            color='white', fontsize=5, rotation=90, va='center', ha='center',
             transform=cbar2.ax.transAxes, zorder=12)
 
     # Edge cleanup (mirror Fig2.py).
@@ -375,9 +382,10 @@ def make_figure(reg_ds_giss, masks, only_pi=False, plot_bg='white',
                 f'_weakonly-{weakening_only}'
                 f"_season-{season or 'annual'}"
                 f'{functions.fw_suffix(future_window)}')
-    fig.savefig(savepath + '.png', bbox_inches='tight', dpi=200,
+    functions.fit_print_width(fig)
+    fig.savefig(savepath + '.png', bbox_inches='tight', dpi=300,
                 transparent=(plot_bg == 'black'))
-    fig.savefig(savepath + '.pdf', bbox_inches='tight', dpi=400,
+    fig.savefig(savepath + '.pdf', bbox_inches='tight', dpi=600,
                 transparent=(plot_bg == 'black'))
     print(f'wrote {savepath}.png/.pdf')
 
